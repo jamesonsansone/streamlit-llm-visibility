@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Environment / secrets
+.env
+.env.*
+secrets.toml
+
+# Streamlit local config
+.streamlit/secrets.toml
+
+# macOS
+.DS_Store
+
+# Output data — generated at runtime, not stored in repo
+output/
+
+# Editor
+.idea/
+.vscode/
