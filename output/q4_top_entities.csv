@@ -1,0 +1,65 @@
+entity,probability,avg_position,rrf_score,run_count,sentiment
+ActiveCampaign,100.0,1.0,100.0,8,positive
+Brevo,100.0,3.0,96.84,8,positive
+HubSpot,100.0,7.88,90.04,8,positive
+Mailchimp,100.0,12.0,84.95,8,positive
+Omnisend,100.0,13.88,82.86,8,positive
+Klaviyo,87.5,10.57,75.84,7,positive
+Sendinblue,87.5,16.0,70.61,7,positive
+Time Savings,87.5,19.14,67.71,7,neutral
+Improved Lead Nurturing,62.5,9.6,54.87,5,positive
+Marketing Hub,62.5,14.2,51.5,5,positive
+Constant Contact,50.0,4.25,47.47,4,neutral
+Drip,37.5,5.67,34.85,3,positive
+Increased Efficiency,37.5,10.33,32.53,3,neutral
+Ad Management,25.0,2.0,24.6,2,neutral
+Better Data,25.0,3.0,24.21,2,neutral
+Driven Insights,25.0,6.5,22.94,2,neutral
+Enhanced Personalization,25.0,7.0,22.78,2,positive
+Increased Marketing,25.0,8.0,22.43,2,neutral
+Email Marketing,25.0,8.5,22.26,2,positive
+Increased Conversions,25.0,11.5,21.34,2,positive
+Reduced Costs,25.0,14.5,20.47,2,neutral
+Popular Marketing Automation Tools,25.0,19.5,19.24,2,positive
+Small Businesses,25.0,22.5,18.57,2,positive
+Better Customer Retention,12.5,2.0,12.3,1,neutral
+Better Customer Targeting,12.5,2.0,12.3,1,neutral
+Better Targeting,12.5,2.0,12.3,1,neutral
+Consider When Choosing,12.5,3.0,12.1,1,positive
+Audience Segmentation,12.5,3.0,12.1,1,neutral
+Customer Relationship Management,12.5,4.0,11.91,1,positive
+Consistent Multichannel Marketing,12.5,4.0,11.91,1,neutral
+Customer Onboarding,12.5,5.0,11.73,1,neutral
+Enhanced Customer Retention,12.5,5.0,11.73,1,neutral
+Customer Support,12.5,5.0,11.73,1,positive
+Customer Service,12.5,6.0,11.55,1,positive
+Customize Communication,12.5,6.0,11.55,1,neutral
+Email Marketing Capabilities,12.5,6.0,11.55,1,positive
+Enhanced Customer Engagement,12.5,6.0,11.55,1,neutral
+Enhanced Lead Management,12.5,7.0,11.38,1,neutral
+Email Campaigns,12.5,7.0,11.38,1,positive
+Enhanced Campaign Management,12.5,7.0,11.38,1,neutral
+Friendly Interface,12.5,8.0,11.21,1,positive
+Improved Data,12.5,9.0,11.05,1,neutral
+Get Feedback,12.5,10.0,10.89,1,neutral
+Enhanced Customer Targeting,12.5,10.0,10.89,1,positive
+Improved Customer Engagement,12.5,10.0,10.89,1,neutral
+GetResponse,12.5,11.0,10.74,1,neutral
+Key Features,12.5,12.0,10.59,1,neutral
+Getting Started,12.5,12.0,10.59,1,neutral
+Salesforce,12.5,13.0,10.45,1,neutral
+Salesforce Marketing Cloud Growth Edition,12.5,14.0,10.3,1,neutral
+Lead Management,12.5,15.0,10.17,1,neutral
+Key Benefits,12.5,15.0,10.17,1,neutral
+Reduced Marketing Costs,12.5,16.0,10.03,1,neutral
+Smarter Decision,12.5,16.0,10.03,1,positive
+Lead Follow,12.5,17.0,9.9,1,neutral
+Marketing Automation,12.5,19.0,9.65,1,positive
+Social Media Management,12.5,20.0,9.53,1,neutral
+Nurture Leads,12.5,21.0,9.41,1,neutral
+Onboard New Customers,12.5,23.0,9.19,1,neutral
+Repetitive Questions,12.5,25.0,8.97,1,positive
+Schedule Social Media Posts,12.5,26.0,8.87,1,neutral
+Social Media Posting,12.5,29.0,8.57,1,neutral
+Sync Leads,12.5,30.0,8.47,1,neutral
+What Marketing Tasks Can Be Automated,12.5,32.0,8.29,1,neutral
