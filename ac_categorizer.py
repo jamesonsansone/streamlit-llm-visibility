@@ -44,7 +44,10 @@ _CATEGORY_RULES: list[tuple[re.Pattern, str]] = [
 
     # --- Competitors ---
     (re.compile(
-        r'(?:mailchimp|klaviyo|hubspot|brevo|sendinblue|constantcontact|getresponse|omnisend|drip|convertkit|campaignmonitor|mailerlite|aweber)\.com',
+        r'(?:mailchimp|klaviyo|hubspot|brevo|sendinblue|constantcontact|getresponse|omnisend|'
+        r'drip|convertkit|campaignmonitor|mailerlite|aweber|salesforce|pardot|marketo|'
+        r'zoho|keap|infusionsoft|gohighlevel|clevertap|emarsys|maropost|webengage|'
+        r'bloomreach|encharge|sender|sendpulse|mailbluster|act|agilecrm|thryv|streak)\.com',
         re.I
     ),                                                         "Competitor"),
 
@@ -54,15 +57,39 @@ _CATEGORY_RULES: list[tuple[re.Pattern, str]] = [
 
     # --- Third-party publications ---
     (re.compile(
-        r'(?:techradar|pcmag|forbes|cnet|techcrunch|businessinsider|tomsguide|zdnet|wired|entrepreneur|inc|businessnews)\.com',
+        r'(?:techradar|pcmag|forbes|cnet|techcrunch|businessinsider|tomsguide|zdnet|wired|'
+        r'entrepreneur|inc|businessnews|uschamber)\.com',
         re.I
     ),                                                         "3rd Party: Publication"),
 
     # --- Comparison/curated tool sites ---
     (re.compile(
-        r'(?:zapier|emailtooltester|tooltester|emailvendorselection|emailmarketing\.com)\.(?:com|net|org)',
+        r'(?:zapier|emailtooltester|tooltester|emailvendorselection|emailmarketing)\.(?:com|net|org)',
         re.I
     ),                                                         "3rd Party: Comparison"),
+
+    # --- Marketing blogs and agencies ---
+    (re.compile(
+        r'(?:ventureharbour|inboxarmy|emailwarmup|saffronedge|flowium|firstpier|panoramata|'
+        r'thecmo|socialhospitality|grazitti|ritzmarketingsolutions|redlineminds|munro\.agency|'
+        r'flatlineagency|awwtomation|2pointagency|jdrgroup|insiderone)\.(?:com|co\.uk|agency)',
+        re.I
+    ),                                                         "3rd Party: Marketing Blog"),
+
+    # --- Email/marketing tools and integrations ---
+    (re.compile(
+        r'(?:leadsbridge|ifttt|gmass|mailtrap|saleshandy|trellus|alumio|numerous|'
+        r'postalytics|seedprod|elementor|ecommerceboost|ecommerceintelligence|'
+        r'jellyreach|lumi|retainful|paystone|emailwarmup|clerk|decidr|blaze|'
+        r'linkmobility|yournotify|sendpulse|mailbluster|sender|arinet)\.(?:com|ai|co|io)',
+        re.I
+    ),                                                         "3rd Party: Tool/Integration"),
+
+    # --- Ecommerce platforms ---
+    (re.compile(
+        r'(?:bigcommerce|squareup|shopify|woocommerce|magento|checkoutlinks|checkoutchamp|funnelish)\.com',
+        re.I
+    ),                                                         "Ecommerce Platform"),
 
     # --- Social / community ---
     (re.compile(r'reddit\.com', re.I),                        "3rd Party: Reddit"),
@@ -191,10 +218,16 @@ def get_top_level_category(category: str) -> str:
         return "3rd Party: YouTube"
     if "Comparison" in category:
         return "3rd Party: Comparison"
+    if "Marketing Blog" in category:
+        return "3rd Party: Blog"
+    if "Tool/Integration" in category:
+        return "3rd Party: Tool"
     if "Wikipedia" in category:
         return "3rd Party: Wikipedia"
     if "LinkedIn" in category:
         return "3rd Party: LinkedIn"
+    if category == "Ecommerce Platform":
+        return "Ecommerce"
     return "Other"
 
 
@@ -387,6 +420,45 @@ def build_domain_query_pivot(query_data_list: list[dict], top_n: int = 25) -> pd
     pivot["_total"] = pivot.sum(axis=1)
     pivot = pivot.sort_values("_total", ascending=False).drop(columns=["_total"])
     return pivot
+
+
+def build_all_url_citations(query_data_list: list[dict]) -> pd.DataFrame:
+    """
+    Returns all source URLs across all queries with total citation count and category.
+    Columns: uri | title | domain | category | total_citations | queries_count | queries_list
+    Sorted by total_citations desc.
+    """
+    if not query_data_list:
+        return pd.DataFrame(
+            columns=["uri", "title", "domain", "category", "total_citations", "queries_count", "queries_list"]
+        )
+    parts = []
+    for item in query_data_list:
+        src_df = item.get("sources_df", pd.DataFrame())
+        if src_df.empty or "uri" not in src_df.columns or "run_count" not in src_df.columns:
+            continue
+        cols = [c for c in ["uri", "title", "domain", "category", "run_count"] if c in src_df.columns]
+        tmp = src_df[cols].copy()
+        tmp["query"] = item["query"]
+        parts.append(tmp)
+    if not parts:
+        return pd.DataFrame(
+            columns=["uri", "title", "domain", "category", "total_citations", "queries_count", "queries_list"]
+        )
+    combined = pd.concat(parts, ignore_index=True)
+    group_cols = [c for c in ["uri", "title", "domain", "category"] if c in combined.columns]
+    agg = (
+        combined.groupby(group_cols)
+        .agg(
+            total_citations=("run_count", "sum"),
+            queries_count=("query", "nunique"),
+            queries_list=("query", lambda x: ", ".join(sorted(x.unique()))),
+        )
+        .reset_index()
+        .sort_values("total_citations", ascending=False)
+        .reset_index(drop=True)
+    )
+    return agg
 
 
 # ---------------------------------------------------------------------------

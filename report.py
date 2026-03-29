@@ -38,6 +38,7 @@ try:
         generate_heatmap_insights,
         build_cross_query_domain_summary,
         build_domain_query_pivot,
+        build_all_url_citations,
     )
 except ImportError:
     (
@@ -48,12 +49,13 @@ except ImportError:
         generate_heatmap_insights,
         build_cross_query_domain_summary,
         build_domain_query_pivot,
-    ) = (None,) * 7
+        build_all_url_citations,
+    ) = (None,) * 8
 
 OUTPUT_DIR = "./output"
 
 st.set_page_config(
-    page_title="Fan-Out Report — ActiveCampaign",
+    page_title="Fan-Out Report: ActiveCampaign",
     page_icon="📊",
     layout="wide",
 )
@@ -315,7 +317,7 @@ def render_query_detail(prefix: str, query_name: str):
             st.subheader("Citation Count by Category")
             render_sources_chart(sources_df)
 
-            st.subheader(f"All Cited Sources — {len(sources_df)} unique URLs")
+            st.subheader(f"All Cited Sources: {len(sources_df)} unique URLs")
             st.caption(
                 "🔵 Blue = ActiveCampaign  |  🔴 Red = Competitor  |  "
                 "🟢 Green = >75% probability  |  🟡 Yellow = 25–75%  |  ⬜ Gray = <25%  |  "
@@ -346,7 +348,6 @@ def render_query_detail(prefix: str, query_name: str):
 
                 st.dataframe(
                     style_sources(df_display[display_cols]),
-                    use_container_width=True,
                     hide_index=True,
                 )
 
@@ -368,7 +369,6 @@ def render_query_detail(prefix: str, query_name: str):
             display_cols = [c for c in display_cols if c in subqueries_df.columns]
             st.dataframe(
                 subqueries_df[display_cols],
-                use_container_width=True,
                 hide_index=True,
             )
 
@@ -398,13 +398,12 @@ def render_query_detail(prefix: str, query_name: str):
                 brands_sorted = brands_df.sort_values("run_count", ascending=False).reset_index(drop=True)
                 st.dataframe(
                     style_brands(brands_sorted[display_cols]),
-                    use_container_width=True,
                     hide_index=True,
                 )
 
             with st.expander(f"Show all {len(entities_df)} extracted entities (includes non-brand phrases)"):
                 st.caption("All TitleCase phrases the regex extracted — includes workflow descriptions, not just brand names.")
-                st.dataframe(entities_df, use_container_width=True, hide_index=True)
+                st.dataframe(entities_df, hide_index=True)
 
 # ---------------------------------------------------------------------------
 # Landing page — cross-query summary
@@ -412,7 +411,7 @@ def render_query_detail(prefix: str, query_name: str):
 
 def render_landing(queries: dict):
     st.title("Query Fan-Out Analysis")
-    st.caption("ActiveCampaign — LLM Citation & Share of Voice Report")
+    st.caption("ActiveCampaign LLM Citation and Share of Voice Report")
 
     if not queries:
         st.error(
@@ -422,7 +421,7 @@ def render_landing(queries: dict):
         st.code("GEMINI_API_KEY=your_key python3 fanout_engine.py")
         return
 
-    st.subheader("Summary — Total Queries Analyzed")
+    st.subheader("Summary: Total Queries Analyzed")
     st.caption("Select a query in the sidebar to drill into sources, subqueries, and brand mentions.")
 
     rows = []
@@ -487,7 +486,6 @@ def render_landing(queries: dict):
     summary_df = pd.DataFrame(rows)
     st.dataframe(
         summary_df.style.apply(style_summary_row, axis=1),
-        use_container_width=True,
         hide_index=True,
     )
     st.caption("🔴 AC SoV = 0%  |  🟡 AC SoV < 15%  |  🟢 AC SoV ≥ 15%")
@@ -524,7 +522,7 @@ def render_landing(queries: dict):
             f"**AC is mentioned but not cited** in responses for "
             f"{len(mentioned)} quer{'y' if len(mentioned) == 1 else 'ies'}. "
             "This means Gemini references ActiveCampaign in its answer but uses other sources "
-            "as grounding evidence — a signal that AC content could be better optimized for "
+            "as grounding evidence - a signal that AC content could be better optimized for "
             "retrieval on these topics."
         )
 
@@ -564,7 +562,7 @@ def render_landing(queries: dict):
     # ── Source Intelligence (all queries combined) ────────────────────────
     if not all_sources_df.empty:
         st.divider()
-        st.subheader("Source Intelligence — All Queries Combined")
+        st.subheader("Source Intelligence: All Queries Combined")
 
         # 1. Category distribution chart
         st.markdown("#### Citation Distribution by Category")
@@ -609,7 +607,7 @@ def render_landing(queries: dict):
                     "citation_count": "Citations",
                     "pct_of_ac":      "% of AC Citations",
                 })
-                st.dataframe(ac_prop_df, use_container_width=True, hide_index=True)
+                st.dataframe(ac_prop_df, hide_index=True)
 
         # 3. Query × AC Property Heatmap
         st.markdown("#### Query × AC Property Heatmap")
@@ -620,13 +618,13 @@ def render_landing(queries: dict):
         if build_query_heatmap is not None and query_data_list:
             pivot = build_query_heatmap(query_data_list)
             if pivot is not None and not pivot.empty:
-                st.dataframe(style_heatmap(pivot), use_container_width=True)
+                st.dataframe(style_heatmap(pivot))
                 st.caption("🟢 4+ citations  |  🟡 1–3  |  🔴 0 (gap)")
             else:
                 st.info("No AC property data available to build heatmap.")
 
         # 4. High-Frequency Non-AC Sites — Gap Analysis
-        st.markdown("#### High-Frequency Non-AC Sites — Gap Analysis")
+        st.markdown("#### High-Frequency Non-AC Sites: Gap Analysis")
         st.caption(
             "Third-party sites dominating citation slots where AC has no presence — "
             "ranked by total citation volume across all queries."
@@ -658,7 +656,6 @@ def render_landing(queries: dict):
                     st.dataframe(
                         non_ac[["Flag", "Domain", "Category", "Total Citations",
                                 "Queries Count", "Queries"]],
-                        use_container_width=True,
                         hide_index=True,
                     )
                     flagged = non_ac[non_ac["Flag"] == "⚠️"]
@@ -681,7 +678,37 @@ def render_landing(queries: dict):
                             f"{'query' if top_row['Queries Count'] == 1 else 'queries'})."
                         )
 
-        # 5. Website × Query Citation Map
+        # 5. All Cited URLs
+        st.markdown("#### All Cited URLs")
+        st.caption(
+            "Every URL cited across all queries, ranked by total citation count. "
+            "Includes ActiveCampaign pages alongside all third-party sources."
+        )
+        if build_all_url_citations is not None and query_data_list:
+            all_url_df = build_all_url_citations(query_data_list)
+            if all_url_df.empty:
+                st.info("No URL citation data available.")
+            else:
+                def _style_all_url_row(row):
+                    cat = str(row.get("category", ""))
+                    if cat.startswith("AC:"):
+                        return [_BLUE] * len(row)
+                    if cat == "Competitor":
+                        return [_RED] * len(row)
+                    return [""] * len(row)
+
+                display_cols = [c for c in ["domain", "uri", "title", "category", "total_citations", "queries_count", "queries_list"] if c in all_url_df.columns]
+                top100 = all_url_df[display_cols].head(100)
+                st.dataframe(
+                    top100.style.apply(_style_all_url_row, axis=1),
+                    hide_index=True,
+                )
+                st.caption(
+                    f"Showing top {len(top100)} of {len(all_url_df)} unique URLs  |  "
+                    "🔵 Blue = ActiveCampaign  |  🔴 Red = Competitor"
+                )
+
+        # 6. Website × Query Citation Map
         st.markdown("#### Website × Query Citation Map")
         st.caption(
             "The top 25 most-cited domains across all queries. "
@@ -703,7 +730,6 @@ def render_landing(queries: dict):
                     pivot_display.style.apply(
                         lambda row: style_domain_row(row, ac_domain_set), axis=1
                     ),
-                    use_container_width=True,
                     hide_index=True,
                 )
                 st.caption(
@@ -731,31 +757,43 @@ def run_new_query(query: str, num_runs: int, model_name: str = "gemini-2.5-flash
     st.session_state.run_counter += 1
     prefix = f"live{st.session_state.run_counter}"
 
-    with st.spinner(f"Running {num_runs} Gemini calls for: '{query}'..."):
-        try:
-            result = run_analysis(
-                query=query,
-                api_key=api_key,
-                num_runs=num_runs,
-                model_name=model_name,
+    progress_bar = st.progress(0, text=f"Starting run 1 of {num_runs}...")
+    status_text  = st.empty()
+
+    def _progress(current: int, total: int) -> None:
+        pct = int(current / total * 100)
+        progress_bar.progress(pct, text=f"Run {current} of {total} complete ({pct}%)")
+        status_text.caption(f"Analyzing: run {current}/{total}")
+
+    try:
+        result = run_analysis(
+            query=query,
+            api_key=api_key,
+            num_runs=num_runs,
+            model_name=model_name,
+            progress_callback=_progress,
+        )
+        progress_bar.progress(100, text=f"Done - {num_runs} runs complete.")
+        status_text.empty()
+        if result.get("model_fallback_triggered"):
+            st.info(
+                f"Gemini 3.1 Flash Lite preview was unavailable - "
+                f"results generated with {FALLBACK_MODEL}."
             )
-            if result.get("model_fallback_triggered"):
-                st.info(
-                    f"Gemini 3.1 Flash Lite preview was unavailable — "
-                    f"results generated with {FALLBACK_MODEL}."
-                )
-            # Enrich sources with AC categories
-            if not result["sources"].empty and categorize_sources:
-                src_dicts = result["sources"].to_dict("records")
-                result["sources"] = pd.DataFrame(categorize_sources(src_dicts))
+        # Enrich sources with AC categories
+        if not result["sources"].empty and categorize_sources:
+            src_dicts = result["sources"].to_dict("records")
+            result["sources"] = pd.DataFrame(categorize_sources(src_dicts))
 
-            os.makedirs(OUTPUT_DIR, exist_ok=True)
-            save_to_csv(result, query=query, output_dir=OUTPUT_DIR, prefix=prefix)
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        save_to_csv(result, query=query, output_dir=OUTPUT_DIR, prefix=prefix)
 
-            return prefix
-        except Exception as exc:
-            st.error(f"Analysis failed: {exc}")
-            return None
+        return prefix
+    except Exception as exc:
+        progress_bar.empty()
+        status_text.empty()
+        st.warning(f"Analysis failed: {exc}")
+        return None
 
 # ---------------------------------------------------------------------------
 # Main

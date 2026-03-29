@@ -17,8 +17,9 @@ secrets.toml
 # macOS
 .DS_Store
 
-# Output data — generated at runtime, not stored in repo
-output/
+# Output data — live query results are ephemeral on Streamlit Cloud
+# Sample CSVs (output/q*.csv) are intentionally committed for demo purposes
+output/live*.csv
 
 # Editor
 .idea/

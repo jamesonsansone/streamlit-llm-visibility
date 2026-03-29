@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 MODEL_NAME = "gemini-2.5-flash-lite"
 
 AVAILABLE_MODELS = {
-    "gemini-3.1-flash-lite-preview": "Gemini 3.1 Flash Lite — Preview (More sub-queries)",
+    "gemini-3.1-flash-lite-preview": "Gemini 3.1 Flash Lite (Preview) - More sub-queries",
     "gemini-2.5-flash-lite":          "Gemini 2.5 Flash Lite (Standard)",
 }
 FALLBACK_MODEL = "gemini-2.5-flash-lite"

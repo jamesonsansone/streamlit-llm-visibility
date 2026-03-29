@@ -29,7 +29,7 @@ logging.basicConfig(level=logging.INFO)
 # ---------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="Query Fan-Out Analyzer — ActiveCampaign",
+    page_title="Query Fan-Out Analyzer: ActiveCampaign",
     page_icon="\U0001f50d",
     layout="wide",
 )
@@ -268,7 +268,7 @@ def main() -> None:
             status_text.empty()
             if result.get("model_fallback_triggered"):
                 st.info(
-                    f"Gemini 3.1 Flash Lite preview was unavailable — "
+                    f"Gemini 3.1 Flash Lite preview was unavailable - "
                     f"results generated with {FALLBACK_MODEL}."
                 )
             st.session_state.last_result = result
@@ -348,7 +348,6 @@ def main() -> None:
             display_cols = [c for c in display_cols if c in sub_df.columns]
             st.dataframe(
                 style_prob_df(sub_df[display_cols]),
-                use_container_width=True,
                 hide_index=True,
             )
             st.caption("\U0001f7e2 >75% probability &nbsp;&nbsp; \U0001f7e1 25-75% &nbsp;&nbsp; \u26aa <25%")
@@ -367,7 +366,6 @@ def main() -> None:
             display_cols = [c for c in display_cols if c in src_df.columns]
             st.dataframe(
                 style_sources_df(src_df[display_cols]),
-                use_container_width=True,
                 hide_index=True,
             )
             st.caption("\U0001f535 Blue = AC properties &nbsp;&nbsp; \U0001f534 Red = Competitors")
@@ -378,7 +376,7 @@ def main() -> None:
             if ac_breakdown.empty:
                 st.info("No ActiveCampaign URLs appeared in citation sets for this query.")
             else:
-                st.dataframe(ac_breakdown, use_container_width=True, hide_index=True)
+                st.dataframe(ac_breakdown, hide_index=True)
 
             # Category distribution chart
             st.subheader("Citation Distribution by Category")
@@ -399,7 +397,7 @@ def main() -> None:
                     with st.expander("View flagged international URLs"):
                         intl_display = intl_rows[["uri", "intl_flag", "category"]].copy()
                         intl_display["query"] = query_label
-                        st.dataframe(intl_display, use_container_width=True, hide_index=True)
+                        st.dataframe(intl_display, hide_index=True)
 
     # Tab 3: Entities
     with tab3:
@@ -425,7 +423,6 @@ def main() -> None:
 
             st.dataframe(
                 ent_df[display_cols].style.apply(entity_row_style, axis=1),
-                use_container_width=True,
                 hide_index=True,
             )
             st.caption("\U0001f535 Blue = ActiveCampaign &nbsp;&nbsp; \U0001f534 Red = Competitors")
@@ -441,7 +438,7 @@ def main() -> None:
         )
         pivot = build_query_heatmap(all_results)
         if pivot is not None and not pivot.empty:
-            st.dataframe(style_heatmap(pivot), use_container_width=True)
+            st.dataframe(style_heatmap(pivot))
             st.caption("\U0001f7e2 4+ citations &nbsp;&nbsp; \U0001f7e1 1-3 &nbsp;&nbsp; \U0001f534 0 (gap)")
 
             insights = generate_heatmap_insights(pivot)
