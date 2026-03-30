@@ -822,14 +822,25 @@ def main():
             queries[p] = item["query_name"]
 
     with st.sidebar:
-        st.image(
-            "https://www.activecampaign.com/site/assets/images/ap-logo/ac-full-logo-dark-bg.svg",
-            width=180,
-        )
-        st.markdown("### Query Fan-Out Report")
         st.markdown(
-            "This tool runs target queries through Gemini AI with live web search enabled "
-            "and measures **LLM Share of Voice** — how often ActiveCampaign content is actually *cited* "
+            """
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+  <svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 48 48">
+    <rect width="48" height="48" rx="8" fill="#356AE6"/>
+    <polygon points="24,10 37,38 29,38 24,25 19,38 11,38" fill="white"/>
+    <line x1="17" y1="30" x2="31" y2="30" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+  </svg>
+  <div style="line-height:1.25">
+    <div style="font-size:1rem;font-weight:700;color:inherit">ActiveCampaign</div>
+    <div style="font-size:0.8rem;color:#888">Query Fan-Out Report</div>
+  </div>
+</div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "This tool runs target queries through Gemini models with live web search enabled to understand query fan-out"
+            "and measures **LLM Share of Voice** - how often ActiveCampaign content is actually *cited* "
             "as a source versus merely *mentioned* in the AI's answer. "
             "Each query is run multiple times to establish citation probability across runs."
         )
