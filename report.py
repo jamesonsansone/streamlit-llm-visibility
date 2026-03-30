@@ -509,7 +509,11 @@ def render_landing(queries: dict):
     st.subheader("Key Findings")
 
     zero_sov   = [r["Query"] for r in rows if r["AC SoV"] == "0.0%"]
-    mentioned  = [r for r in rows if float(r["AC Mentioned"].replace("%", "")) >= 50]
+    # Queries where AC is mentioned in text (≥50%) but has 0 citations — true "mentioned not cited"
+    mentioned_not_cited = [
+        r for r in rows
+        if r["AC SoV"] == "0.0%" and float(r["AC Mentioned"].replace("%", "")) >= 50
+    ]
 
     if zero_sov:
         st.info(
@@ -518,10 +522,10 @@ def render_landing(queries: dict):
             + ". Review the Source Intelligence section below to see which third-party sites "
             "are filling those citation slots."
         )
-    if mentioned and zero_sov:
+    if mentioned_not_cited:
         st.info(
             f"**AC is mentioned but not cited** in responses for "
-            f"{len(mentioned)} quer{'y' if len(mentioned) == 1 else 'ies'}. "
+            f"{len(mentioned_not_cited)} quer{'y' if len(mentioned_not_cited) == 1 else 'ies'}. "
             "This means Gemini references ActiveCampaign in its answer but uses other sources "
             "as grounding evidence - a signal that AC content could be better optimized for "
             "retrieval on these topics."
@@ -818,11 +822,15 @@ def main():
             queries[p] = item["query_name"]
 
     with st.sidebar:
-        st.title("📊 Fan-Out Report")
+        st.image(
+            "https://www.activecampaign.com/site/assets/images/ap-logo/ac-full-logo-dark-bg.svg",
+            width=180,
+        )
+        st.markdown("### Query Fan-Out Report")
         st.markdown(
-            "This tool runs target queries through the Gemini AI with Google Search grounding enabled "
+            "This tool runs target queries through Gemini AI with live web search enabled "
             "and measures **LLM Share of Voice** — how often ActiveCampaign content is actually *cited* "
-            "as evidence versus merely *mentioned* in the AI's answer. "
+            "as a source versus merely *mentioned* in the AI's answer. "
             "Each query is run multiple times to establish citation probability across runs."
         )
         st.divider()
