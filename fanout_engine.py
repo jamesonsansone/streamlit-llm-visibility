@@ -519,14 +519,14 @@ def aggregate_runs(
         probability = round(run_count / n * 100, 1)
         avg_position = round(sum(positions) / len(positions), 2)
         rrf_score = compute_rrf_score(positions, n)
-        sentiment = score_entity_sentiment(entity, all_combined_text)
+        # sentiment = score_entity_sentiment(entity, all_combined_text)
         entity_rows.append({
             "entity": entity,
             "probability": probability,
             "avg_position": avg_position,
             "rrf_score": rrf_score,
-            "run_count": run_count,
-            "sentiment": sentiment,
+            "run_count": run_count
+            # "sentiment": sentiment,
         })
 
     entity_df = pd.DataFrame(entity_rows).sort_values("rrf_score", ascending=False).reset_index(drop=True) if entity_rows else pd.DataFrame()

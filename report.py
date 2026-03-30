@@ -411,7 +411,7 @@ def render_query_detail(prefix: str, query_name: str):
 # ---------------------------------------------------------------------------
 
 def render_landing(queries: dict):
-    st.title("Query Fan-Out Analysis")
+    st.title("Aggregated Overview: Query Fan-Out Analysis")
     st.caption("ActiveCampaign LLM Citation and Share of Voice Report")
 
     if not queries:
