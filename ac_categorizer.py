@@ -64,13 +64,13 @@ _CATEGORY_RULES: list[tuple[re.Pattern, str]] = [
 
     # --- Comparison/curated tool sites ---
     (re.compile(
-        r'(?:zapier|emailtooltester|tooltester|emailvendorselection|emailmarketing)\.(?:com|net|org)',
+        r'(?:zapier|emailtooltester|tooltester|emailvendorselection|emailmarketing|ventureharbour)\.(?:com|net|org)',
         re.I
     ),                                                         "3rd Party: Comparison"),
 
     # --- Marketing blogs and agencies ---
     (re.compile(
-        r'(?:ventureharbour|inboxarmy|emailwarmup|saffronedge|flowium|firstpier|panoramata|'
+        r'(?:inboxarmy|emailwarmup|saffronedge|flowium|firstpier|panoramata|'
         r'thecmo|socialhospitality|grazitti|ritzmarketingsolutions|redlineminds|munro\.agency|'
         r'flatlineagency|awwtomation|2pointagency|jdrgroup|insiderone)\.(?:com|co\.uk|agency)',
         re.I

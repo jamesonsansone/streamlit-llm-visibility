@@ -64,11 +64,11 @@ st.set_page_config(
 # Color constants
 # ---------------------------------------------------------------------------
 
-_GREEN  = "background-color: #d4edda"
-_YELLOW = "background-color: #fff3cd"
-_RED    = "background-color: #f8d7da"
-_BLUE   = "background-color: #cce5ff"
-_GRAY   = "background-color: #e9ecef"
+_GREEN  = "background-color: #d4edda; color: #155724"
+_YELLOW = "background-color: #fff3cd; color: #6c4a00"
+_RED    = "background-color: #f8d7da; color: #721c24"
+_BLUE   = "background-color: #cce5ff; color: #004085"
+_GRAY   = "background-color: #e9ecef; color: #212529"
 
 # ---------------------------------------------------------------------------
 # Session state init
@@ -396,8 +396,9 @@ def render_query_detail(prefix: str, query_name: str):
                 display_cols = ["entity", "run_count", "probability", "rrf_score", "sentiment"]
                 display_cols = [c for c in display_cols if c in brands_df.columns]
                 brands_sorted = brands_df.sort_values("run_count", ascending=False).reset_index(drop=True)
+                fmt = {c: "{:.1f}" for c in ["probability", "rrf_score"] if c in display_cols}
                 st.dataframe(
-                    style_brands(brands_sorted[display_cols]),
+                    style_brands(brands_sorted[display_cols]).format(fmt),
                     hide_index=True,
                 )
 
@@ -582,32 +583,32 @@ def render_landing(queries: dict):
                 )
 
         # 2. AC Property Share of Voice
-        st.markdown("#### AC Property Share of Voice")
-        st.caption(
-            "Which ActiveCampaign content sections are earning citations, and for which queries — "
-            "a map of where AC's authority lives."
-        )
-        if build_ac_property_breakdown is not None:
-            ac_prop_df = build_ac_property_breakdown(all_sources_df)
-            if ac_prop_df.empty:
-                st.info("No ActiveCampaign URLs found across any queries.")
-            else:
-                if "_query" in all_sources_df.columns:
-                    def _queries_for_prop(prop: str) -> str:
-                        mask = (
-                            (all_sources_df["category"] == prop)
-                            & all_sources_df["_query"].notna()
-                        )
-                        return ", ".join(sorted(all_sources_df.loc[mask, "_query"].unique()))
-                    ac_prop_df["Top Associated Queries"] = ac_prop_df["ac_property"].apply(
-                        _queries_for_prop
-                    )
-                ac_prop_df = ac_prop_df.rename(columns={
-                    "ac_property":    "AC Property",
-                    "citation_count": "Citations",
-                    "pct_of_ac":      "% of AC Citations",
-                })
-                st.dataframe(ac_prop_df, hide_index=True)
+        # st.markdown("#### AC Property Share of Voice")
+        # st.caption(
+        #     "Which ActiveCampaign content sections are earning citations, and for which queries — "
+        #     "a map of where AC's authority lives."
+        # )
+        # if build_ac_property_breakdown is not None:
+        #     ac_prop_df = build_ac_property_breakdown(all_sources_df)
+        #     if ac_prop_df.empty:
+        #         st.info("No ActiveCampaign URLs found across any queries.")
+        #     else:
+        #         if "_query" in all_sources_df.columns:
+        #             def _queries_for_prop(prop: str) -> str:
+        #                 mask = (
+        #                     (all_sources_df["category"] == prop)
+        #                     & all_sources_df["_query"].notna()
+        #                 )
+        #                 return ", ".join(sorted(all_sources_df.loc[mask, "_query"].unique()))
+        #             ac_prop_df["Top Associated Queries"] = ac_prop_df["ac_property"].apply(
+        #                 _queries_for_prop
+        #             )
+        #         ac_prop_df = ac_prop_df.rename(columns={
+        #             "ac_property":    "AC Property",
+        #             "citation_count": "Citations",
+        #             "pct_of_ac":      "% of AC Citations",
+        #         })
+        #         st.dataframe(ac_prop_df, hide_index=True)
 
         # 3. Query × AC Property Heatmap
         st.markdown("#### Query × AC Property Heatmap")
@@ -618,16 +619,16 @@ def render_landing(queries: dict):
         if build_query_heatmap is not None and query_data_list:
             pivot = build_query_heatmap(query_data_list)
             if pivot is not None and not pivot.empty:
-                st.dataframe(style_heatmap(pivot))
+                st.dataframe(style_heatmap(pivot).format("{:.1f}"))
                 st.caption("🟢 4+ citations  |  🟡 1–3  |  🔴 0 (gap)")
             else:
                 st.info("No AC property data available to build heatmap.")
 
         # 4. High-Frequency Non-AC Sites — Gap Analysis
-        st.markdown("#### High-Frequency Non-AC Sites: Gap Analysis")
+        st.markdown("#### High-Frequency Non-AC Sites")
         st.caption(
-            "Third-party sites dominating citation slots where AC has no presence — "
-            "ranked by total citation volume across all queries."
+            "Third-party sites appearing in citation slots across all queries, "
+            "ranked by total citation volume."
         )
         if build_cross_query_domain_summary is not None:
             cross_df = build_cross_query_domain_summary(query_data_list)
@@ -667,7 +668,7 @@ def render_landing(queries: dict):
                             f"{top['Queries Count']} "
                             f"{'query' if top['Queries Count'] == 1 else 'queries'}. "
                             f"Consider auditing what content {top['Domain']} publishes for these "
-                            "queries — it's a citation signal for what Gemini considers authoritative."
+                            "queries. It's a citation signal for what Gemini considers authoritative."
                         )
                     else:
                         top_row = non_ac.iloc[0]
