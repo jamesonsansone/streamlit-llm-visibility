@@ -780,13 +780,20 @@ def run_new_query(query: str, num_runs: int, model_name: str = "gemini-2.5-flash
                 f"Gemini 3.1 Flash Lite preview was unavailable - "
                 f"results generated with {FALLBACK_MODEL}."
             )
+        if result["sources"].empty:
+            st.info(
+                "Gemini returned no grounding sources for this query. This can happen if the "
+                "API key's project does not have Google Search grounding active, or Gemini "
+                "answered from training data without searching. Check your GEMINI_API_KEY "
+                "project in AI Studio."
+            )
         # Enrich sources with AC categories
         if not result["sources"].empty and categorize_sources:
             src_dicts = result["sources"].to_dict("records")
             result["sources"] = pd.DataFrame(categorize_sources(src_dicts))
 
         os.makedirs(OUTPUT_DIR, exist_ok=True)
-        save_to_csv(result, query=query, output_dir=OUTPUT_DIR, prefix=prefix)
+        save_to_csv(result, query=query, output_dir=OUTPUT_DIR, prefix=f"{prefix}_")
 
         return prefix
     except Exception as exc:
