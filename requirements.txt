@@ -5,3 +5,5 @@ thefuzz>=0.22.0
 rapidfuzz>=3.0.0
 requests>=2.31.0
 supabase>=2.4.0
+scikit-learn>=1.4.0
+sentence-transformers>=3.0.0

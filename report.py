@@ -339,7 +339,7 @@ def render_query_detail(prefix: str, query_name: str):
 
     st.divider()
 
-    tab1, tab2, tab3 = st.tabs(["🔗 Sources", "🔍 Subqueries", "🏷️ Competitive Brands"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🔗 Sources", "🔍 Subqueries", "🏷️ Competitive Brands", "🗺️ Content Gap"])
 
     # --- Sources tab ---
     with tab1:
@@ -437,6 +437,185 @@ def render_query_detail(prefix: str, query_name: str):
             with st.expander(f"Show all {len(entities_df)} extracted entities (includes non-brand phrases)"):
                 st.caption("All TitleCase phrases the regex extracted — includes workflow descriptions, not just brand names.")
                 st.dataframe(entities_df, hide_index=True)
+
+    # --- Content Gap tab ---
+    with tab4:
+        st.subheader("Content Gap Analysis")
+        st.caption(
+            "Compares the top-cited competitor URL vs. the top-cited AC URL against the aggregated "
+            "AI answers. Shows which topics the competitor covers that AC does not — these are your "
+            "content gaps. Also shows which AC passages earned citations — these are strengths to protect."
+        )
+
+        responses_df = data.get("responses", pd.DataFrame())
+
+        if responses_df.empty:
+            st.info(
+                "Response text is not available for this query. "
+                "Re-run it from the sidebar to enable Content Gap Analysis."
+            )
+        elif sources_df.empty:
+            st.info("No sources data available for this query.")
+        else:
+            # Build combined reference document from all runs
+            reference_doc = " ".join(responses_df["response_text"].dropna().tolist())
+
+            # Separate AC and non-AC sources
+            non_ac_df = sources_df[~sources_df["category"].str.startswith("AC:", na=False)]
+            ac_df     = sources_df[sources_df["category"].str.startswith("AC:", na=False)]
+
+            if non_ac_df.empty:
+                st.info("No competitor sources found for this query — all citations are AC-owned.")
+            else:
+                # Auto-select top URLs by rrf_score
+                non_ac_sorted = non_ac_df.sort_values("rrf_score", ascending=False).reset_index(drop=True)
+                top_ac_row    = ac_df.sort_values("rrf_score", ascending=False).iloc[0] if not ac_df.empty else None
+
+                # Let user override competitor URL via selectbox
+                competitor_options = non_ac_sorted["uri"].tolist()
+                competitor_labels  = [
+                    f"{row['domain']}  (RRF {row['rrf_score']:.1f} · {int(row['run_count'])}/8 runs)"
+                    for _, row in non_ac_sorted.iterrows()
+                ]
+                selected_idx = st.selectbox(
+                    "Competitor URL to analyze",
+                    options=range(len(competitor_options)),
+                    format_func=lambda i: competitor_labels[i],
+                    index=0,
+                    help="Auto-selected: highest RRF score. Change to compare a different competitor.",
+                )
+                selected_competitor_row = non_ac_sorted.iloc[selected_idx]
+
+                # Show the two URLs being compared
+                col1, col2 = st.columns(2)
+                col1.metric(
+                    "Competitor URL",
+                    selected_competitor_row["domain"],
+                    f"RRF {selected_competitor_row['rrf_score']:.1f} · {int(selected_competitor_row['run_count'])}/8 runs",
+                )
+                if top_ac_row is not None:
+                    col2.metric(
+                        "Top AC URL",
+                        top_ac_row["domain"],
+                        f"RRF {top_ac_row['rrf_score']:.1f} · {int(top_ac_row['run_count'])}/8 runs",
+                    )
+                else:
+                    col2.error("⚠️ ActiveCampaign was NOT cited for this query — full content gap.")
+
+                st.divider()
+
+                if st.button("Run Gap Analysis", type="primary"):
+                    try:
+                        from citation_mapper import (
+                            fetch_page_content, chunk_page,
+                            score_chunks_tfidf, score_chunks_embedding, find_content_gaps,
+                        )
+                    except ImportError:
+                        st.error("citation_mapper.py not found. Ensure it is in the same directory as report.py.")
+                        st.stop()
+
+                    competitor_uri = selected_competitor_row["uri"]
+                    ac_uri = top_ac_row["uri"] if top_ac_row is not None else None
+
+                    with st.spinner("Fetching competitor page via Jina Reader..."):
+                        competitor_md = fetch_page_content(competitor_uri)
+                    with st.spinner("Fetching AC page via Jina Reader..." if ac_uri else "Skipping AC fetch (not cited)..."):
+                        ac_md = fetch_page_content(ac_uri) if ac_uri else ""
+
+                    if not competitor_md:
+                        st.warning(
+                            f"Could not fetch content from `{competitor_uri}`. "
+                            "Jina Reader may be rate-limited or the page requires JavaScript."
+                        )
+                    else:
+                        with st.spinner("Scoring chunks with TF-IDF and embeddings..."):
+                            competitor_chunks = chunk_page(competitor_md)
+                            ac_chunks         = chunk_page(ac_md) if ac_md else []
+
+                            if not competitor_chunks:
+                                st.warning("Could not extract readable content from the competitor page.")
+                            else:
+                                all_chunks = competitor_chunks + ac_chunks
+                                tfidf_scored = score_chunks_tfidf(reference_doc, all_chunks)
+                                embed_scored = score_chunks_embedding(reference_doc, all_chunks)
+
+                                n = len(competitor_chunks)
+                                for i, chunk in enumerate(competitor_chunks):
+                                    chunk["tfidf_score"] = tfidf_scored[i]["tfidf_score"]
+                                    chunk["embed_score"]  = embed_scored[i]["embed_score"]
+                                    chunk["source"] = "competitor"
+                                for i, chunk in enumerate(ac_chunks):
+                                    j = n + i
+                                    chunk["tfidf_score"] = tfidf_scored[j]["tfidf_score"]
+                                    chunk["embed_score"]  = embed_scored[j]["embed_score"]
+                                    chunk["source"] = "ac"
+
+                                gaps = find_content_gaps(competitor_chunks, ac_chunks)
+
+                                # --- Section 1: Content Gaps ---
+                                st.markdown("#### Content Gaps — Topics the competitor covers that AC does not")
+                                st.caption(
+                                    "These passages from the competitor URL scored high against the AI answer "
+                                    "but have no close match in the AC URL. Adding this content to AC pages "
+                                    "could improve citation rates."
+                                )
+                                if gaps:
+                                    for g in gaps[:5]:
+                                        embed_pct = f"{g['embed_score']:.2f}"
+                                        tfidf_pct = f"{g['tfidf_score']:.2f}"
+                                        st.markdown(
+                                            f"**{g['heading']}** &nbsp;·&nbsp; "
+                                            f"AI relevance: Embed `{embed_pct}` · TF-IDF `{tfidf_pct}`"
+                                        )
+                                        st.markdown(
+                                            f"> {g['text'][:400]}{'...' if len(g['text']) > 400 else ''}"
+                                        )
+                                        st.divider()
+                                else:
+                                    st.success(
+                                        "No major content gaps detected — AC covers the same topics "
+                                        "as the competitor for this query."
+                                    )
+
+                                # --- Section 2: AC Citation Strengths (only if AC was cited) ---
+                                if ac_chunks:
+                                    st.markdown("#### AC Citation Strengths — What earned AC its citations")
+                                    st.caption(
+                                        "AC passages that matched the AI answer most closely. "
+                                        "These are the topics your content already covers well."
+                                    )
+                                    ac_ranked = sorted(ac_chunks, key=lambda x: x["embed_score"], reverse=True)
+                                    for chunk in ac_ranked[:3]:
+                                        st.markdown(
+                                            f"**{chunk['heading']}** &nbsp;·&nbsp; "
+                                            f"Embed `{chunk['embed_score']:.2f}` · TF-IDF `{chunk['tfidf_score']:.2f}`"
+                                        )
+                                        st.markdown(
+                                            f"> {chunk['text'][:400]}{'...' if len(chunk['text']) > 400 else ''}"
+                                        )
+                                        st.divider()
+                                else:
+                                    st.info(
+                                        "AC was not cited for this query, so there are no citation strengths to show. "
+                                        "Focus on the content gaps above to start earning citations."
+                                    )
+
+                                # --- Section 3: Full chunk comparison ---
+                                with st.expander("TF-IDF vs. Embedding scores — all chunks"):
+                                    comparison_rows = [
+                                        {
+                                            "source":    c["source"],
+                                            "heading":   c["heading"],
+                                            "tfidf":     round(c["tfidf_score"], 3),
+                                            "embedding": round(c["embed_score"], 3),
+                                            "words":     c["word_count"],
+                                        }
+                                        for c in competitor_chunks + ac_chunks
+                                    ]
+                                    st.dataframe(
+                                        pd.DataFrame(comparison_rows).sort_values("embedding", ascending=False),
+                                        hide_index=True,
+                                    )
 
 # ---------------------------------------------------------------------------
 # Landing page — cross-query summary
