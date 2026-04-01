@@ -30,6 +30,13 @@ except ImportError:
     FALLBACK_MODEL = "gemini-2.5-flash-lite"
 
 try:
+    from db import get_client, save_run_to_db, load_all_queries, load_query_detail
+    _DB_AVAILABLE = True
+except ImportError:
+    get_client = save_run_to_db = load_all_queries = load_query_detail = None
+    _DB_AVAILABLE = False
+
+try:
     from ac_categorizer import (
         categorize_sources,
         build_top_level_summary,
@@ -87,6 +94,15 @@ def _init_state():
 # ---------------------------------------------------------------------------
 
 def load_query_data(prefix: str, output_dir: str) -> dict:
+    # DB-backed query — prefix is "db:{id}"
+    if prefix.startswith("db:") and _DB_AVAILABLE and load_query_detail is not None:
+        try:
+            db_id = int(prefix[3:])
+            return load_query_detail(db_id)
+        except Exception:
+            pass
+
+    # CSV fallback
     def safe_read(filename: str) -> pd.DataFrame:
         path = os.path.join(output_dir, filename)
         if os.path.exists(path):
@@ -101,23 +117,39 @@ def load_query_data(prefix: str, output_dir: str) -> dict:
         "sources":    safe_read(f"{prefix}_top_sources.csv"),
         "subqueries": safe_read(f"{prefix}_top_subqueries.csv"),
         "entities":   safe_read(f"{prefix}_top_entities.csv"),
+        "responses":  pd.DataFrame(),
     }
 
 
 def discover_queries(output_dir: str) -> dict:
-    """Scans output dir for scorecard CSVs. Returns {prefix: query_name}."""
+    """
+    Returns {prefix: query_name} for all known queries.
+    Tries Supabase first (keyed as "db:{id}"), then falls back to CSV glob.
+    Both sources are merged so committed sample CSVs always appear.
+    """
     queries = {}
-    if not os.path.exists(output_dir):
-        return queries
-    for path in sorted(glob.glob(os.path.join(output_dir, "*_scorecard.csv"))):
-        prefix = os.path.basename(path).replace("_scorecard.csv", "")
+
+    # 1. CSV fallback — always load committed sample data
+    if os.path.exists(output_dir):
+        for path in sorted(glob.glob(os.path.join(output_dir, "*_scorecard.csv"))):
+            prefix = os.path.basename(path).replace("_scorecard.csv", "")
+            try:
+                df = pd.read_csv(path)
+                row = df[df["metric"] == "Query"]["value"]
+                query_name = str(row.iloc[0]) if not row.empty else prefix
+            except Exception:
+                query_name = prefix
+            queries[prefix] = query_name
+
+    # 2. Supabase — DB queries keyed as "db:{id}" so they don't collide with CSV prefixes
+    if _DB_AVAILABLE and load_all_queries is not None:
         try:
-            df = pd.read_csv(path)
-            row = df[df["metric"] == "Query"]["value"]
-            query_name = str(row.iloc[0]) if not row.empty else prefix
+            for q in load_all_queries():
+                key = f"db:{q['db_id']}"
+                queries[key] = q["query_text"]
         except Exception:
-            query_name = prefix
-        queries[prefix] = query_name
+            pass
+
     return queries
 
 
@@ -799,6 +831,19 @@ def run_new_query(query: str, num_runs: int, model_name: str = "gemini-2.5-flash
 
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         save_to_csv(result, query=query, output_dir=OUTPUT_DIR, prefix=f"{prefix}_")
+
+        # Persist to Supabase if available
+        if _DB_AVAILABLE and save_run_to_db is not None:
+            db_id = save_run_to_db(
+                result,
+                query=query,
+                model_used=result.get("model_used", model_name),
+                num_runs=num_runs,
+            )
+            if db_id is not None:
+                status_text.caption(f"Saved to database (id={db_id})")
+                # Return DB-keyed prefix so detail page loads from DB
+                return f"db:{db_id}"
 
         return prefix
     except Exception as exc:
