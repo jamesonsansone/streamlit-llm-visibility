@@ -517,6 +517,7 @@ def render_query_detail(prefix: str, query_name: str):
                         from citation_mapper import (
                             fetch_page_content, chunk_page,
                             score_chunks_tfidf, score_chunks_embedding, find_content_gaps,
+                            fetch_last_modified, detect_answer_capsules,
                         )
                     except ImportError:
                         st.error("citation_mapper.py not found. Ensure it is in the same directory as report.py.")
@@ -528,6 +529,14 @@ def render_query_detail(prefix: str, query_name: str):
                         competitor_md = fetch_page_content(competitor_uri)
                     with st.spinner("Fetching AC page via Jina Reader..." if ac_uri else "Skipping AC fetch (not cited)..."):
                         ac_md = fetch_page_content(ac_uri) if ac_uri else ""
+                    with st.spinner("Checking page freshness..."):
+                        competitor_modified = fetch_last_modified(competitor_uri)
+                        ac_modified = fetch_last_modified(ac_uri) if ac_uri else ""
+
+                    # Show freshness comparison
+                    fresh_col1, fresh_col2 = st.columns(2)
+                    fresh_col1.caption(f"Last modified: **{competitor_modified}**" if competitor_modified else "Last modified: unknown")
+                    fresh_col2.caption(f"Last modified: **{ac_modified}**" if ac_modified else "Last modified: unknown")
 
                     if not competitor_md:
                         st.warning(
@@ -607,10 +616,43 @@ def render_query_detail(prefix: str, query_name: str):
                                         "Focus on the content gaps above to start earning citations."
                                     )
 
-                                # --- Section 3: AI Recommendations ---
-                                st.markdown("#### AI Recommendations")
+                                # --- Section 2b: Answer Capsule Spotlight ---
+                                comp_capsules = detect_answer_capsules(competitor_chunks)
+                                ac_capsules   = detect_answer_capsules(ac_chunks)
+
+                                if comp_capsules or ac_capsules:
+                                    st.markdown("#### Answer Capsule Spotlight")
+                                    st.caption(
+                                        "Short, self-contained passages structured for direct AI extraction. "
+                                        "Competitor capsules show what to replicate; AC capsules show what is already working."
+                                    )
+                                    cap_col1, cap_col2 = st.columns(2)
+                                    with cap_col1:
+                                        st.markdown("**Competitor: Worth Replicating**")
+                                        if comp_capsules:
+                                            for cap in comp_capsules[:2]:
+                                                st.markdown(f"*{cap['heading']}* (Embed `{cap['embed_score']:.2f}`)")
+                                                quoted = '\n'.join(f"> {line}" for line in cap["text"].splitlines())
+                                                st.markdown(quoted)
+                                        else:
+                                            st.info("No capsule candidates detected in competitor content.")
+                                    with cap_col2:
+                                        st.markdown("**AC: Already Working**")
+                                        if ac_capsules:
+                                            for cap in ac_capsules[:2]:
+                                                st.markdown(f"*{cap['heading']}* (Embed `{cap['embed_score']:.2f}`)")
+                                                quoted = '\n'.join(f"> {line}" for line in cap["text"].splitlines())
+                                                st.markdown(quoted)
+                                        else:
+                                            st.info("No answer capsule candidates found in AC content for this query.")
+
+                                st.divider()
+
+                                # --- Section 3: AI Content Brief ---
+                                st.markdown("#### Content Brief")
                                 st.caption(
-                                    "Gemini-generated content strategy based on the gap analysis above."
+                                    "Gemini-generated content strategy based on the gap analysis, "
+                                    "answer capsule data, and page freshness above."
                                 )
                                 try:
                                     import os as _os
@@ -621,37 +663,81 @@ def render_query_detail(prefix: str, query_name: str):
 
                                     if _gemini_key:
                                         _gap_lines = "\n".join(
-                                            f"- {g['heading']} (Embed: {g['embed_score']:.2f}, TF-IDF: {g['tfidf_score']:.2f}): {g['text'][:250]}"
+                                            f"- {g['heading']} (Embed: {g['embed_score']:.2f}): {g['text'][:400]}"
                                             for g in gaps[:5]
                                         ) if gaps else "No major content gaps detected."
-                                        _ac_strength_lines = "\n".join(
-                                            f"- {c['heading']} (Embed: {c['embed_score']:.2f}): {c['text'][:250]}"
-                                            for c in sorted(ac_chunks, key=lambda x: x["embed_score"], reverse=True)[:3]
-                                        ) if ac_chunks else "ActiveCampaign was not cited for this query."
-                                        _prompt = (
-                                            f"You are a content strategist for ActiveCampaign helping improve LLM citation share of voice.\n\n"
-                                            f"A user ran the query: \"{query_name}\"\n\n"
-                                            f"Content Gaps (topics the top-cited competitor covers that AC does not):\n{_gap_lines}\n\n"
-                                            f"AC Citation Strengths (topics that earned AC citations in AI answers):\n{_ac_strength_lines}\n\n"
-                                            f"Provide a short analysis followed by 3-5 specific, actionable content recommendations. "
-                                            f"In your analysis, briefly explain WHY the competitor URL is likely being cited more frequently "
-                                            f"(consider: content depth, topic coverage, page authority signals, how well their content "
-                                            f"matches the semantic patterns AI models use when generating answers). "
-                                            f"Then explain how each recommendation would help ActiveCampaign earn more AI citations "
-                                            f"AND improve organic SEO. Be concrete about page types, topics, and content angles. "
-                                            f"Format: 2-3 sentence analysis paragraph, then bullet point recommendations."
-                                        )
+
+                                        _comp_top = sorted(competitor_chunks, key=lambda x: x.get("embed_score", 0), reverse=True)[:3]
+                                        _ac_top   = sorted(ac_chunks, key=lambda x: x.get("embed_score", 0), reverse=True)[:3]
+
+                                        _competitor_top_chunks = "\n".join(
+                                            f"- [{c['heading']}] (Embed: {c['embed_score']:.2f}, TF-IDF: {c['tfidf_score']:.2f}): {c['text'][:400]}"
+                                            for c in _comp_top
+                                        ) or "None available."
+
+                                        _ac_top_chunks = "\n".join(
+                                            f"- [{c['heading']}] (Embed: {c['embed_score']:.2f}): {c['text'][:400]}"
+                                            for c in _ac_top
+                                        ) if _ac_top else "ActiveCampaign was not cited for this query."
+
+                                        _comp_capsule_text = "\n".join(
+                                            f"- [{cap['heading']}]: {cap['text']}"
+                                            for cap in comp_capsules[:2]
+                                        ) or "None detected."
+
+                                        _ac_capsule_text = "\n".join(
+                                            f"- [{cap['heading']}]: {cap['text']}"
+                                            for cap in ac_capsules[:2]
+                                        ) if ac_capsules else "None detected."
+
+                                        _prompt = f"""You are a content strategist for ActiveCampaign optimizing for LLM citation share of voice.
+
+Query analyzed: "{query_name}"
+
+Freshness:
+- Competitor page last modified: {competitor_modified or 'unknown'}
+- ActiveCampaign page last modified: {ac_modified or 'unknown'}
+
+Top competitor passages (ranked by AI relevance):
+{_competitor_top_chunks}
+
+Top AC passages (ranked by AI relevance):
+{_ac_top_chunks}
+
+Competitor answer capsules (short, extractable passages the AI likely pulled directly):
+{_comp_capsule_text}
+
+AC answer capsules (what AC already has that is working):
+{_ac_capsule_text}
+
+Content gaps (topics competitor covers that AC does not):
+{_gap_lines}
+
+Output a structured content brief with these exact sections:
+
+**Why the competitor is winning citations**
+2-3 sentences. Reference specific passages and the freshness gap if relevant.
+
+**Content Brief: Recommended additions to ActiveCampaign.com**
+For each gap or opportunity, provide:
+- Suggested heading for the new section
+- Target answer capsule to write (1-2 declarative sentences, under 60 words, suitable for direct AI extraction)
+- Page type (blog post / feature page / comparison page / FAQ)
+
+**Strengths to protect**
+1-2 sentences on what AC is already doing right based on the citation strength and capsule data.
+"""
                                         from google import genai as _genai
                                         _gc = _genai.Client(api_key=_gemini_key)
                                         _resp = _gc.models.generate_content(
-                                            model="gemini-2.5-flash-lite",
+                                            model="gemini-3.1-flash-lite-preview",
                                             contents=_prompt,
                                         )
                                         st.markdown(_resp.text)
                                     else:
-                                        st.info("Add GEMINI_API_KEY to Streamlit secrets to enable AI recommendations.")
+                                        st.info("Add GEMINI_API_KEY to Streamlit secrets to enable the content brief.")
                                 except Exception as _exc:
-                                    st.warning(f"Could not generate AI recommendations: {_exc}")
+                                    st.warning(f"Could not generate content brief: {_exc}")
 
                                 # --- Section 4: Full chunk comparison ---
                                 with st.expander("TF-IDF vs. Embedding scores — all chunks"):

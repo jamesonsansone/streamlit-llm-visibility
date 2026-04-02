@@ -17,6 +17,8 @@ from typing import Optional
 
 import requests
 
+import json
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -42,6 +44,88 @@ def fetch_page_content(url: str) -> str:
     except Exception as exc:
         logger.warning(f"fetch_page_content failed for {url}: {exc}")
         return ""
+
+
+# ---------------------------------------------------------------------------
+# Page freshness
+# ---------------------------------------------------------------------------
+
+def fetch_last_modified(url: str) -> str:
+    """
+    Returns the last-modified date string for a URL.
+
+    Tries in order:
+      1. HTTP Last-Modified response header (HEAD request)
+      2. JSON-LD dateModified / datePublished from page HTML
+      3. Returns "" if nothing found or on any error
+    """
+    _headers = {"User-Agent": "Mozilla/5.0 (compatible; FanoutBot/1.0)"}
+    try:
+        r = requests.head(url, timeout=8, allow_redirects=True, headers=_headers)
+        lm = r.headers.get("Last-Modified", "")
+        if lm:
+            return lm
+    except Exception:
+        pass
+
+    try:
+        r = requests.get(url, timeout=12, headers=_headers)
+        for block in re.findall(
+            r'<script[^>]+application/ld\+json[^>]*>(.*?)</script>',
+            r.text,
+            re.DOTALL | re.IGNORECASE,
+        ):
+            try:
+                obj = json.loads(block)
+                if isinstance(obj, list):
+                    obj = obj[0]
+                for key in ("dateModified", "datePublished"):
+                    if obj.get(key):
+                        return obj[key]
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Answer capsule detection
+# ---------------------------------------------------------------------------
+
+def detect_answer_capsules(chunks: list[dict]) -> list[dict]:
+    """
+    Identifies chunks structured like answer capsules — short, declarative,
+    self-contained passages that an AI can extract verbatim.
+
+    Heuristics (all must pass):
+      - word_count < 80
+      - embed_score > 0.50
+      - First sentence does not start with a contextual pronoun (requires prior context)
+      - Contains at least one declarative signal (year, %, superlative, named tool)
+
+    Returns qualifying chunks sorted by embed_score desc.
+    Chunks must have been scored by score_chunks_embedding() first.
+    """
+    _contextual = re.compile(r'^(This|These|It|They|Our|We|Here|That)\b', re.IGNORECASE)
+    _declarative = re.compile(
+        r'\b(20\d{2}|best|most|top|first|leading|\d+%|\d+ percent|key|primary)\b',
+        re.IGNORECASE,
+    )
+    capsules = []
+    for c in chunks:
+        if c.get("word_count", 999) >= 80:
+            continue
+        if c.get("embed_score", 0) < 0.50:
+            continue
+        first_sentence = c["text"].split('.')[0].strip()
+        if _contextual.match(first_sentence):
+            continue
+        if not _declarative.search(c["text"]):
+            continue
+        capsules.append(c)
+    return sorted(capsules, key=lambda x: x.get("embed_score", 0), reverse=True)
 
 
 # ---------------------------------------------------------------------------
