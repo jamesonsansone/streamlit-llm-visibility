@@ -519,8 +519,8 @@ def render_query_detail(prefix: str, query_name: str):
                             score_chunks_tfidf, score_chunks_embedding, find_content_gaps,
                             fetch_last_modified, detect_answer_capsules,
                         )
-                    except ImportError:
-                        st.error("citation_mapper.py not found. Ensure it is in the same directory as report.py.")
+                    except ImportError as _ie:
+                        st.error(f"Import error: {_ie}")
                         st.stop()
 
                     ac_uri = top_ac_row["uri"] if top_ac_row is not None else None
