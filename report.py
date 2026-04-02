@@ -598,7 +598,7 @@ def render_query_detail(prefix: str, query_name: str):
                                     st.success(
                                         "No major content gaps detected. For every topic the competitor "
                                         "covered that the AI referenced, AC has a section with topic "
-                                        "similarity above 0.55. Review the TF-IDF vs. Embedding table "
+                                        "similarity above 0.75. Review the TF-IDF vs. Embedding table "
                                         "below to see where the fine margins are."
                                     )
 
