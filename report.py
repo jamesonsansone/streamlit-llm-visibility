@@ -579,11 +579,16 @@ def render_query_detail(prefix: str, query_name: str):
                                 )
                                 if gaps:
                                     for g in gaps[:5]:
-                                        embed_pct = f"{g['embed_score']:.2f}"
-                                        tfidf_pct = f"{g['tfidf_score']:.2f}"
+                                        best_ac_note = (
+                                            f" · Closest AC section: *{g['best_ac_match']}*"
+                                            f" (similarity `{g['topic_similarity']:.2f}`)"
+                                            if g.get("best_ac_match") else ""
+                                        )
                                         st.markdown(
-                                            f"**{g['heading']}** &nbsp;·&nbsp; "
-                                            f"AI relevance: Embed `{embed_pct}` · TF-IDF `{tfidf_pct}`"
+                                            f"**{g['heading']}**"
+                                            f" · AI relevance: Embed `{g['embed_score']:.2f}`"
+                                            f" · TF-IDF `{g['tfidf_score']:.2f}`"
+                                            + best_ac_note
                                         )
                                         truncated = g['text'][:400] + ('...' if len(g['text']) > 400 else '')
                                         quoted = '\n'.join(f"> {line}" for line in truncated.splitlines())
@@ -591,8 +596,10 @@ def render_query_detail(prefix: str, query_name: str):
                                         st.divider()
                                 else:
                                     st.success(
-                                        "No major content gaps detected — AC covers the same topics "
-                                        "as the competitor for this query."
+                                        "No major content gaps detected. For every topic the competitor "
+                                        "covered that the AI referenced, AC has a section with topic "
+                                        "similarity above 0.55. Review the TF-IDF vs. Embedding table "
+                                        "below to see where the fine margins are."
                                     )
 
                                 # --- Section 2: AC Citation Strengths (only if AC was cited) ---

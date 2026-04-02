@@ -323,7 +323,7 @@ def score_chunks_embedding(reference_doc: str, chunks: list[dict]) -> list[dict]
         chunk_units = chunk_embs / (chunk_norms + 1e-10)
         scores = (chunk_units @ ref_unit.T).flatten()
 
-        return [{**c, "embed_score": float(scores[i])} for i, c in enumerate(chunks)]
+        return [{**c, "embed_score": float(scores[i]), "_embedding": chunk_embs[i]} for i, c in enumerate(chunks)]
 
     except Exception as exc:
         logger.warning(f"score_chunks_embedding failed: {exc}")
@@ -337,47 +337,75 @@ def score_chunks_embedding(reference_doc: str, chunks: list[dict]) -> list[dict]
 def find_content_gaps(
     top_url_chunks: list[dict],
     ac_chunks: list[dict],
-    threshold: float = 0.25,
+    ai_relevance_threshold: float = 0.45,
+    topic_coverage_threshold: float = 0.55,
 ) -> list[dict]:
     """
-    Identifies content gaps: topics covered by top_url that AC does NOT cover.
+    Identifies true per-topic content gaps using chunk-to-chunk semantic comparison.
 
-    For each top_url chunk, finds the most similar AC chunk using embed_score.
-    If the best AC match is below `threshold`, the topic is considered a gap.
+    For each competitor chunk that the AI referenced (embed_score >= ai_relevance_threshold):
+      - Compute cosine similarity between this chunk's embedding and every AC chunk's embedding
+      - If the best-matching AC chunk scores below topic_coverage_threshold, it's a gap
+      - Attach topic_similarity (best AC match score) and best_ac_match (heading) to each gap
 
-    When ac_chunks is empty (AC was not cited at all), every top_url chunk
-    that has embed_score > 0.1 is returned as a gap.
+    This is fundamentally different from the old approach: we compare competitor content
+    against AC content directly, not against the AI answer. A gap means the competitor
+    covers a topic the AI cares about and AC genuinely doesn't have equivalent content for.
 
-    Returns gap chunks sorted by tfidf_score desc (most AI-referenced gaps first).
-    Chunks must have "embed_score" and "tfidf_score" from the scoring functions.
+    Graceful fallback: if _embedding keys are missing (model failed), reverts to
+    the simpler heuristic so the tab never crashes.
     """
     if not top_url_chunks:
         return []
 
     import numpy as np
 
-    # Full gap case — AC has no content to compare against
+    # Full gap case — AC was not cited at all, no AC chunks to compare against
     if not ac_chunks:
-        gaps = [c for c in top_url_chunks if c.get("embed_score", 0) > 0.1]
-        return sorted(gaps, key=lambda x: x.get("tfidf_score", 0), reverse=True)
+        gaps = [c for c in top_url_chunks if c.get("embed_score", 0) >= ai_relevance_threshold]
+        return sorted(gaps, key=lambda x: x.get("embed_score", 0), reverse=True)
 
-    ac_embed_scores = np.array([c.get("embed_score", 0.0) for c in ac_chunks])
+    # Check whether embedding vectors are available for per-topic comparison
+    has_embeddings = (
+        "_embedding" in top_url_chunks[0] and
+        "_embedding" in ac_chunks[0]
+    )
+
+    if not has_embeddings:
+        # Graceful fallback to old global-threshold heuristic
+        ac_scores = np.array([c.get("embed_score", 0.0) for c in ac_chunks])
+        max_ac = float(np.max(ac_scores))
+        gaps = [
+            c for c in top_url_chunks
+            if c.get("embed_score", 0) >= ai_relevance_threshold and max_ac < 0.25
+        ]
+        return sorted(gaps, key=lambda x: x.get("embed_score", 0), reverse=True)
+
+    # Per-topic pairwise comparison using stored embedding vectors
+    ac_embs = np.stack([c["_embedding"] for c in ac_chunks])   # shape: (n_ac, dim)
+    ac_norms = np.linalg.norm(ac_embs, axis=1, keepdims=True)
+    ac_units = ac_embs / (ac_norms + 1e-10)
 
     gaps = []
     for chunk in top_url_chunks:
-        chunk_embed = chunk.get("embed_score", 0.0)
-        # Only consider chunks that the AI actually referenced
-        if chunk_embed < 0.1:
-            continue
+        if chunk.get("embed_score", 0) < ai_relevance_threshold:
+            continue  # AI didn't meaningfully reference this topic — skip
 
-        # Find how well this topic is covered in AC chunks
-        # Proxy: use the ratio of this chunk's embed score to the max AC embed score
-        # A chunk is a gap if it scores high but AC has nothing comparably high
-        max_ac_score = float(np.max(ac_embed_scores)) if len(ac_embed_scores) > 0 else 0.0
+        comp_emb = chunk["_embedding"].reshape(1, -1)
+        comp_unit = comp_emb / (np.linalg.norm(comp_emb) + 1e-10)
 
-        # Compare chunk's embed score against AC's best score for the same reference
-        # If chunk scores well (>threshold) but AC's best doesn't reach threshold, it's a gap
-        if max_ac_score < threshold or (chunk_embed > threshold and max_ac_score < chunk_embed * 0.7):
-            gaps.append(chunk)
+        # Similarity between this competitor chunk and every AC chunk (topic-to-topic)
+        topic_sims = (ac_units @ comp_unit.T).flatten()
+        best_idx = int(np.argmax(topic_sims))
+        max_topic_sim = float(topic_sims[best_idx])
 
-    return sorted(gaps, key=lambda x: x.get("tfidf_score", 0), reverse=True)
+        if max_topic_sim < topic_coverage_threshold:
+            # AC has no section close enough to this topic — genuine content gap
+            gaps.append({
+                **chunk,
+                "topic_similarity": round(max_topic_sim, 3),
+                "best_ac_match": ac_chunks[best_idx]["heading"],
+            })
+
+    # Sort by AI relevance (embed_score) desc — most impactful gaps first
+    return sorted(gaps, key=lambda x: x.get("embed_score", 0), reverse=True)
