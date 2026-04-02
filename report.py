@@ -657,7 +657,7 @@ def render_query_detail(prefix: str, query_name: str):
 
                                     st.markdown("**What makes a good answer capsule:**")
                                     st.caption(
-                                        "1. **Short:** under 80 words so it can be extracted as a complete unit without truncation.\n\n"
+                                        "1. **Short:** under 150 words so it can be extracted as a complete unit without truncation.\n\n"
                                         "2. **High embedding score:** above 0.50, confirming the AI was discussing this topic across multiple runs.\n\n"
                                         "3. **Self-contained opening:** the first sentence does not start with a contextual word like 'This,' 'These,' 'It,' or 'They' - it must make sense without surrounding context.\n\n"
                                         "4. **Declarative signal:** contains a year, a percentage, a superlative (best, most, top), or a named claim - something specific enough for an AI to cite as a fact."
