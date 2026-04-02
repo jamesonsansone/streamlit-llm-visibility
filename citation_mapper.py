@@ -338,7 +338,7 @@ def find_content_gaps(
     top_url_chunks: list[dict],
     ac_chunks: list[dict],
     ai_relevance_threshold: float = 0.45,
-    topic_coverage_threshold: float = 0.55,
+    topic_coverage_threshold: float = 0.75,
 ) -> list[dict]:
     """
     Identifies true per-topic content gaps using chunk-to-chunk semantic comparison.
