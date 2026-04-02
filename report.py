@@ -447,9 +447,11 @@ def render_query_detail(prefix: str, query_name: str):
             "content gaps. Also shows which AC passages earned citations — these are strengths to protect."
         )
         st.caption(
-            "**Embedding score** — measures conceptual similarity using a neural language model. "
-            "High = the AI discussed the same *ideas* as this page section, even if different words were used. "
-            "**TF-IDF score** — measures keyword overlap. "
+            "**Embedding score:** measures conceptual similarity using a neural language model. "
+            "High = the AI discussed the same *ideas* as this page section, even if different words were used."
+        )
+        st.caption(
+            "**TF-IDF score:** measures keyword overlap. "
             "High = the AI used the same specific terms as this page section verbatim."
         )
 
@@ -627,18 +629,22 @@ def render_query_detail(prefix: str, query_name: str):
                                             for c in sorted(ac_chunks, key=lambda x: x["embed_score"], reverse=True)[:3]
                                         ) if ac_chunks else "ActiveCampaign was not cited for this query."
                                         _prompt = (
-                                            f"You are a content strategist for ActiveCampaign. "
+                                            f"You are a content strategist for ActiveCampaign helping improve LLM citation share of voice.\n\n"
                                             f"A user ran the query: \"{query_name}\"\n\n"
                                             f"Content Gaps (topics the top-cited competitor covers that AC does not):\n{_gap_lines}\n\n"
                                             f"AC Citation Strengths (topics that earned AC citations in AI answers):\n{_ac_strength_lines}\n\n"
-                                            f"Provide 3-5 specific, actionable content recommendations for what ActiveCampaign should "
-                                            f"add or improve on activecampaign.com to earn more citations in AI-generated answers. "
-                                            f"Format as bullet points. Be concrete about topics, page types, and content angles."
+                                            f"Provide a short analysis followed by 3-5 specific, actionable content recommendations. "
+                                            f"In your analysis, briefly explain WHY the competitor URL is likely being cited more frequently "
+                                            f"(consider: content depth, topic coverage, page authority signals, how well their content "
+                                            f"matches the semantic patterns AI models use when generating answers). "
+                                            f"Then explain how each recommendation would help ActiveCampaign earn more AI citations "
+                                            f"AND improve organic SEO. Be concrete about page types, topics, and content angles. "
+                                            f"Format: 2-3 sentence analysis paragraph, then bullet point recommendations."
                                         )
                                         from google import genai as _genai
                                         _gc = _genai.Client(api_key=_gemini_key)
                                         _resp = _gc.models.generate_content(
-                                            model="gemini-2.0-flash-lite",
+                                            model="gemini-2.5-flash-lite",
                                             contents=_prompt,
                                         )
                                         st.markdown(_resp.text)
