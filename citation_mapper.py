@@ -52,38 +52,72 @@ def fetch_page_content(url: str) -> str:
 
 def fetch_last_modified(url: str) -> str:
     """
-    Returns the last-modified date string for a URL.
+    Returns the Article schema dateModified for a URL.
 
     Tries in order:
-      1. HTTP Last-Modified response header (HEAD request)
-      2. JSON-LD dateModified / datePublished from page HTML
-      3. Returns "" if nothing found or on any error
+      1. JSON-LD dateModified from Article/BlogPosting schema (most accurate)
+      2. JSON-LD datePublished as fallback
+      3. HTTP Last-Modified response header (least reliable — often CDN cache date)
+      4. Returns "" if nothing found or on any error
+
+    Handles both flat JSON-LD objects and @graph arrays (e.g. WordPress/AC schema).
     """
     _headers = {"User-Agent": "Mozilla/5.0 (compatible; FanoutBot/1.0)"}
-    try:
-        r = requests.head(url, timeout=8, allow_redirects=True, headers=_headers)
-        lm = r.headers.get("Last-Modified", "")
-        if lm:
-            return lm
-    except Exception:
-        pass
 
-    try:
-        r = requests.get(url, timeout=12, headers=_headers)
+    def _extract_date_from_jsonld(html: str) -> str:
         for block in re.findall(
             r'<script[^>]+application/ld\+json[^>]*>(.*?)</script>',
-            r.text,
+            html,
             re.DOTALL | re.IGNORECASE,
         ):
             try:
                 obj = json.loads(block)
+                # Unwrap @graph arrays — find the Article/BlogPosting node
+                candidates = []
                 if isinstance(obj, list):
-                    obj = obj[0]
-                for key in ("dateModified", "datePublished"):
-                    if obj.get(key):
-                        return obj[key]
+                    candidates = obj
+                elif isinstance(obj, dict) and "@graph" in obj:
+                    candidates = obj["@graph"]
+                else:
+                    candidates = [obj]
+
+                # Prefer Article/BlogPosting nodes; fall back to any node with dateModified
+                article_nodes = [
+                    c for c in candidates
+                    if isinstance(c, dict)
+                    and any(t in str(c.get("@type", "")) for t in ("Article", "BlogPosting", "NewsArticle"))
+                ]
+                search_nodes = article_nodes if article_nodes else [c for c in candidates if isinstance(c, dict)]
+
+                for node in search_nodes:
+                    if node.get("dateModified"):
+                        return node["dateModified"]
+                for node in search_nodes:
+                    if node.get("datePublished"):
+                        return node["datePublished"]
             except Exception:
                 pass
+        return ""
+
+    # 1. Try JSON-LD first (editorial date, most accurate)
+    try:
+        r = requests.get(url, timeout=12, headers=_headers)
+        date = _extract_date_from_jsonld(r.text)
+        if date:
+            return date
+        # Save Last-Modified header from this response as fallback
+        lm_fallback = r.headers.get("Last-Modified", "")
+    except Exception:
+        lm_fallback = ""
+
+    # 2. Fall back to HTTP Last-Modified header (CDN/cache date — less reliable)
+    if lm_fallback:
+        return lm_fallback
+
+    # 3. Try HEAD request as last resort
+    try:
+        r = requests.head(url, timeout=8, allow_redirects=True, headers=_headers)
+        return r.headers.get("Last-Modified", "")
     except Exception:
         pass
 
