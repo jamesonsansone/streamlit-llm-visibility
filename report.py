@@ -474,6 +474,8 @@ def render_query_detail(prefix: str, query_name: str):
 
             if non_ac_df.empty:
                 st.info("No competitor sources found for this query — all citations are AC-owned.")
+            elif "rrf_score" not in sources_df.columns:
+                st.info("Citation score data not available for this query. Re-run it to enable Content Gap Analysis.")
             else:
                 # Auto-select top URLs by rrf_score
                 non_ac_sorted = non_ac_df.sort_values("rrf_score", ascending=False).reset_index(drop=True)

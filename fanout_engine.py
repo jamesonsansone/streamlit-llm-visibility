@@ -468,7 +468,8 @@ def aggregate_runs(
             "top_sources": ", ".join(top_3),
         })
 
-    subquery_df = pd.DataFrame(subquery_rows).sort_values("rrf_score", ascending=False).reset_index(drop=True)
+    _sub_raw = pd.DataFrame(subquery_rows)
+    subquery_df = _sub_raw.sort_values("rrf_score", ascending=False).reset_index(drop=True) if not _sub_raw.empty else _sub_raw
 
     # ---- Sources -----------------------------------------------------------
     source_occurrences: dict[str, list[int]] = defaultdict(list)
@@ -500,7 +501,8 @@ def aggregate_runs(
             "run_count": run_count,
         })
 
-    source_df = pd.DataFrame(source_rows).sort_values("rrf_score", ascending=False).reset_index(drop=True)
+    _src_raw = pd.DataFrame(source_rows)
+    source_df = _src_raw.sort_values("rrf_score", ascending=False).reset_index(drop=True) if not _src_raw.empty else _src_raw
 
     # ---- Entities ----------------------------------------------------------
     entity_occurrences: dict[str, list[int]] = defaultdict(list)
