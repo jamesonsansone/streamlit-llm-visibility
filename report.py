@@ -648,6 +648,14 @@ def render_query_detail(prefix: str, query_name: str):
                                         else:
                                             st.info("No answer capsule candidates found in AC content for this query.")
 
+                                    st.markdown("**What makes a good answer capsule:**")
+                                    st.caption(
+                                        "1. **Short:** under 80 words so it can be extracted as a complete unit without truncation.\n\n"
+                                        "2. **High embedding score:** above 0.50, confirming the AI was discussing this topic across multiple runs.\n\n"
+                                        "3. **Self-contained opening:** the first sentence does not start with a contextual word like 'This,' 'These,' 'It,' or 'They' - it must make sense without surrounding context.\n\n"
+                                        "4. **Declarative signal:** contains a year, a percentage, a superlative (best, most, top), or a named claim - something specific enough for an AI to cite as a fact."
+                                    )
+
                                 st.divider()
 
                                 # --- Section 3: AI Content Brief ---
@@ -720,11 +728,11 @@ Output a structured content brief with these exact sections:
 **Why the competitor is winning citations**
 2-3 sentences. Reference specific passages and the freshness gap if relevant.
 
-**Content Brief: Recommended additions to ActiveCampaign.com**
-For each gap or opportunity, provide:
-- Suggested heading for the new section
-- Target answer capsule to write (1-2 declarative sentences, under 60 words, suitable for direct AI extraction)
-- Page type (blog post / feature page / comparison page / FAQ)
+**On-Page Recommendations for ActiveCampaign.com**
+For each gap or opportunity, provide specific on-page edits to the existing ActiveCampaign URL being analyzed. For each recommendation:
+- Suggested section heading to add or rewrite on the existing page
+- Target answer capsule: 1-2 declarative sentences under 60 words, written as if they belong on the AC page, optimized for direct AI extraction. Make these concrete and specific to the query topic.
+- Where on the page: specify whether this should go near the top, in the middle as a new H2, or as a standalone callout block
 
 **Strengths to protect**
 1-2 sentences on what AC is already doing right based on the citation strength and capsule data.
