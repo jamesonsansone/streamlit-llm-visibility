@@ -231,7 +231,7 @@ def style_heatmap(df: pd.DataFrame):
             return "background-color: #fff3cd; color: #856404"
         else:
             return "background-color: #d4edda; color: #155724"
-    return df.style.applymap(cell_style)
+    return df.style.map(cell_style)
 
 
 def style_domain_row(row, ac_domain_set: set):
@@ -446,6 +446,12 @@ def render_query_detail(prefix: str, query_name: str):
             "AI answers. Shows which topics the competitor covers that AC does not — these are your "
             "content gaps. Also shows which AC passages earned citations — these are strengths to protect."
         )
+        st.caption(
+            "**Embedding score** — measures conceptual similarity using a neural language model. "
+            "High = the AI discussed the same *ideas* as this page section, even if different words were used. "
+            "**TF-IDF score** — measures keyword overlap. "
+            "High = the AI used the same specific terms as this page section verbatim."
+        )
 
         responses_df = data.get("responses", pd.DataFrame())
 
@@ -488,19 +494,19 @@ def render_query_detail(prefix: str, query_name: str):
 
                 # Show the two URLs being compared
                 col1, col2 = st.columns(2)
-                col1.metric(
-                    "Competitor URL",
-                    selected_competitor_row["domain"],
-                    f"RRF {selected_competitor_row['rrf_score']:.1f} · {int(selected_competitor_row['run_count'])}/8 runs",
-                )
-                if top_ac_row is not None:
-                    col2.metric(
-                        "Top AC URL",
-                        top_ac_row["domain"],
-                        f"RRF {top_ac_row['rrf_score']:.1f} · {int(top_ac_row['run_count'])}/8 runs",
-                    )
-                else:
-                    col2.error("⚠️ ActiveCampaign was NOT cited for this query — full content gap.")
+                with col1:
+                    st.markdown("**Competitor URL**")
+                    competitor_uri = selected_competitor_row["uri"]
+                    st.markdown(f"[{competitor_uri}]({competitor_uri})")
+                    st.caption(f"RRF {selected_competitor_row['rrf_score']:.1f} · {int(selected_competitor_row['run_count'])}/8 runs")
+                with col2:
+                    if top_ac_row is not None:
+                        st.markdown("**Top AC URL**")
+                        ac_uri_display = top_ac_row["uri"]
+                        st.markdown(f"[{ac_uri_display}]({ac_uri_display})")
+                        st.caption(f"RRF {top_ac_row['rrf_score']:.1f} · {int(top_ac_row['run_count'])}/8 runs")
+                    else:
+                        st.error("⚠️ ActiveCampaign was NOT cited for this query — full content gap.")
 
                 st.divider()
 
@@ -514,7 +520,6 @@ def render_query_detail(prefix: str, query_name: str):
                         st.error("citation_mapper.py not found. Ensure it is in the same directory as report.py.")
                         st.stop()
 
-                    competitor_uri = selected_competitor_row["uri"]
                     ac_uri = top_ac_row["uri"] if top_ac_row is not None else None
 
                     with st.spinner("Fetching competitor page via Jina Reader..."):
@@ -567,9 +572,9 @@ def render_query_detail(prefix: str, query_name: str):
                                             f"**{g['heading']}** &nbsp;·&nbsp; "
                                             f"AI relevance: Embed `{embed_pct}` · TF-IDF `{tfidf_pct}`"
                                         )
-                                        st.markdown(
-                                            f"> {g['text'][:400]}{'...' if len(g['text']) > 400 else ''}"
-                                        )
+                                        truncated = g['text'][:400] + ('...' if len(g['text']) > 400 else '')
+                                        quoted = '\n'.join(f"> {line}" for line in truncated.splitlines())
+                                        st.markdown(quoted)
                                         st.divider()
                                 else:
                                     st.success(
@@ -590,9 +595,9 @@ def render_query_detail(prefix: str, query_name: str):
                                             f"**{chunk['heading']}** &nbsp;·&nbsp; "
                                             f"Embed `{chunk['embed_score']:.2f}` · TF-IDF `{chunk['tfidf_score']:.2f}`"
                                         )
-                                        st.markdown(
-                                            f"> {chunk['text'][:400]}{'...' if len(chunk['text']) > 400 else ''}"
-                                        )
+                                        truncated = chunk['text'][:400] + ('...' if len(chunk['text']) > 400 else '')
+                                        quoted = '\n'.join(f"> {line}" for line in truncated.splitlines())
+                                        st.markdown(quoted)
                                         st.divider()
                                 else:
                                     st.info(
@@ -600,7 +605,49 @@ def render_query_detail(prefix: str, query_name: str):
                                         "Focus on the content gaps above to start earning citations."
                                     )
 
-                                # --- Section 3: Full chunk comparison ---
+                                # --- Section 3: AI Recommendations ---
+                                st.markdown("#### AI Recommendations")
+                                st.caption(
+                                    "Gemini-generated content strategy based on the gap analysis above."
+                                )
+                                try:
+                                    import os as _os
+                                    try:
+                                        _gemini_key = st.secrets.get("GEMINI_API_KEY", "") or _os.environ.get("GEMINI_API_KEY", "")
+                                    except Exception:
+                                        _gemini_key = _os.environ.get("GEMINI_API_KEY", "")
+
+                                    if _gemini_key:
+                                        _gap_lines = "\n".join(
+                                            f"- {g['heading']} (Embed: {g['embed_score']:.2f}, TF-IDF: {g['tfidf_score']:.2f}): {g['text'][:250]}"
+                                            for g in gaps[:5]
+                                        ) if gaps else "No major content gaps detected."
+                                        _ac_strength_lines = "\n".join(
+                                            f"- {c['heading']} (Embed: {c['embed_score']:.2f}): {c['text'][:250]}"
+                                            for c in sorted(ac_chunks, key=lambda x: x["embed_score"], reverse=True)[:3]
+                                        ) if ac_chunks else "ActiveCampaign was not cited for this query."
+                                        _prompt = (
+                                            f"You are a content strategist for ActiveCampaign. "
+                                            f"A user ran the query: \"{query_name}\"\n\n"
+                                            f"Content Gaps (topics the top-cited competitor covers that AC does not):\n{_gap_lines}\n\n"
+                                            f"AC Citation Strengths (topics that earned AC citations in AI answers):\n{_ac_strength_lines}\n\n"
+                                            f"Provide 3-5 specific, actionable content recommendations for what ActiveCampaign should "
+                                            f"add or improve on activecampaign.com to earn more citations in AI-generated answers. "
+                                            f"Format as bullet points. Be concrete about topics, page types, and content angles."
+                                        )
+                                        from google import genai as _genai
+                                        _gc = _genai.Client(api_key=_gemini_key)
+                                        _resp = _gc.models.generate_content(
+                                            model="gemini-2.0-flash-lite",
+                                            contents=_prompt,
+                                        )
+                                        st.markdown(_resp.text)
+                                    else:
+                                        st.info("Add GEMINI_API_KEY to Streamlit secrets to enable AI recommendations.")
+                                except Exception as _exc:
+                                    st.warning(f"Could not generate AI recommendations: {_exc}")
+
+                                # --- Section 4: Full chunk comparison ---
                                 with st.expander("TF-IDF vs. Embedding scores — all chunks"):
                                     comparison_rows = [
                                         {
