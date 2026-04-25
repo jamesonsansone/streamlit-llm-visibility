@@ -22,7 +22,7 @@ The target domain is a sidebar input — change it any time and past runs relabe
 
 ## Prerequisites
 
-- Python 3.11+ (3.12 recommended)
+- Python 3.9+
 - A Gemini API key from [Google AI Studio](https://aistudio.google.com)
 - **Google Search grounding requires a billing-enabled Google Cloud project.** Free-tier API keys from AI Studio may not return grounding metadata for all queries. If `web_search_queries` comes back empty, check your API tier.
 
@@ -108,7 +108,7 @@ Open `http://localhost:8501` in your browser.
 6. Run additional queries in the same session; change the target domain any time and every past run relabels.
 7. Export results as a ZIP of CSVs.
 
-There's also a richer historical report (`streamlit run report.py`) that loads prior CSVs or Supabase rows and adds a content-gap/embedding analysis tab.
+There's also a historical report view (`streamlit run report.py`) that loads exported CSVs from prior runs and adds a content-gap/embedding analysis tab comparing top-cited pages against Gemini's answer.
 
 ---
 
@@ -158,7 +158,7 @@ The tool adds a 2-second delay between calls and retries on 429 errors with expo
 
 v1 uses a simple **Target vs Other** scheme: any URL whose host matches the target domain (or a subdomain of it) is tagged `Target`; everything else is `Other`. Categorization is computed at render time, so changing the target domain in the sidebar instantly relabels all past runs in the current session.
 
-Richer taxonomies (auto-detected `/blog/`, `/docs/`, `/help/` patterns; opt-in YAML rules; a competitor list) are on the roadmap — see the plan notes in `.claude/plans/` or open an issue.
+Richer taxonomies (auto-detected `/blog/`, `/docs/`, `/help/` patterns; opt-in YAML rules; a competitor list) are on the roadmap — open an issue if you'd like to see these prioritized.
 
 ---
 
@@ -210,6 +210,6 @@ fanout-tool/
 
 ## Persistence
 
-By default, the Streamlit UIs keep state in the current session only. Optional Supabase persistence is supported: set `SUPABASE_URL` and `SUPABASE_KEY` (either in `.streamlit/secrets.toml` or as environment variables) and the report view will list saved queries across sessions. The Supabase schema is inferred from the writes in `db.py`; see the migration note at the top of that file if you're upgrading an existing instance.
+By default, state is kept in the current session only. Export results as CSVs from the sidebar and load them in `report.py` to do cross-session or cross-query analysis.
 
-A local-first SQLite adapter is on the roadmap so this works out of the box without any external service.
+A local-first SQLite adapter is on the roadmap so cross-session persistence works out of the box without any external service.
