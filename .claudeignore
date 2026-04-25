@@ -1,0 +1,12 @@
+# Project-level Claude ignore
+
+# Exported run artifacts (large, generated)
+output/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Env files (secrets)
+.env
+.env.*

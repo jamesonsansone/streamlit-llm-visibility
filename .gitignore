@@ -11,15 +11,17 @@ venv/
 .env.*
 secrets.toml
 
-# Streamlit local config
-.streamlit/secrets.toml
+# Streamlit (API keys live here — never commit)
+.streamlit/
+
+# Claude Code project settings (machine-local, not project config)
+.claude/
 
 # macOS
 .DS_Store
 
-# Output data — live query results are ephemeral on Streamlit Cloud
-# Sample CSVs (output/q*.csv) are intentionally committed for demo purposes
-output/live*.csv
+# Output data
+output/
 
 # Editor
 .idea/

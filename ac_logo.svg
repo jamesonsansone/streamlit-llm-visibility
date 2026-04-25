@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" fill="none">
-  <!-- AC logomark -->
-  <rect x="0" y="0" width="48" height="48" rx="8" fill="#356AE6"/>
-  <path d="M24 10 L36 38 H28.5 L24 26 L19.5 38 H12 Z" fill="white"/>
-  <path d="M18 30 H30" stroke="white" stroke-width="3" stroke-linecap="round"/>
-  <!-- ActiveCampaign wordmark -->
-  <text x="56" y="32" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="18" fill="#1a1a2e" letter-spacing="-0.3">ActiveCampaign</text>
-</svg>

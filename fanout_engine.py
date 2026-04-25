@@ -47,28 +47,13 @@ COST_OUTPUT_PER_1M = 0.300   # $ per 1M output tokens
 # Module-level redirect URL cache (avoids re-resolving same URL)
 _REDIRECT_CACHE: dict[str, str] = {}
 
-KNOWN_BRANDS = [
-    "ActiveCampaign",
-    "Active Campaign",
-    "Mailchimp",
-    "Mail Chimp",
-    "HubSpot",
-    "Klaviyo",
-    "Brevo",
-    "Sendinblue",
-    "Constant Contact",
-    "GetResponse",
-    "Omnisend",
-    "Drip",
-    "ConvertKit",
-    "Kit",
-    "Salesforce",
-    "Marketo",
-    "Pardot",
-    "Zoho",
-    "Campaign Monitor",
-    "MailerLite",
-    "AWeber",
+KNOWN_BRANDS: list[str] = [
+    # Single-word TitleCase brands indistinguishable from sentence-start words
+    "Botify", "Conductor", "Ahrefs", "Moz", "Majestic", "Deepcrawl",
+    "Clearscope", "Surfer", "Frase", "Lumar", "Oncrawl", "Sitebulb",
+    "Linkdex", "Searchmetrics", "Raven", "Spyfu", "Mangools",
+    # Acronyms and all-caps short tokens
+    "GSC", "GA4", "GWT", "CMS", "CRM",
 ]
 
 POSITIVE_WORDS = frozenset([
@@ -85,8 +70,13 @@ NEGATIVE_WORDS = frozenset([
     "lacking", "inferior", "steep",
 ])
 
-# Regex for entity extraction — 2+ consecutive TitleCase words
+# Regex patterns for entity extraction
+# 1. Multi-word TitleCase phrases: "Screaming Frog", "Google Search Console"
 _ENTITY_PATTERN = re.compile(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b')
+# 2. CamelCase single-token brands: "BrightEdge", "HubSpot", "WordPress"
+_CAMEL_CASE_PATTERN = re.compile(r'\b([A-Z][a-z]+[A-Z][A-Za-z]*)\b')
+# 3. Uppercase-prefix brands: "SEMrush", "MOZrank" (2+ caps then 2+ lowercase chars)
+_UPPER_PREFIX_PATTERN = re.compile(r'\b([A-Z]{2,}[a-z][A-Za-z]+)\b')
 
 
 # ---------------------------------------------------------------------------
@@ -263,19 +253,19 @@ def extract_entities(text: str) -> list[str]:
     """
     found = set()
 
-    # Regex scan for TitleCase multi-word phrases
+    # Pattern scans: multi-word TitleCase, CamelCase, and uppercase-prefix brands
     for match in _ENTITY_PATTERN.finditer(text):
         found.add(match.group(1))
+    for match in _CAMEL_CASE_PATTERN.finditer(text):
+        found.add(match.group(1))
+    for match in _UPPER_PREFIX_PATTERN.finditer(text):
+        found.add(match.group(1))
 
-    # Explicit brand scan (case-insensitive match, canonical casing preserved)
+    # Explicit brand scan for single-word and acronym brands (case-insensitive)
     text_lower = text.lower()
     for brand in KNOWN_BRANDS:
         if brand.lower() in text_lower:
             found.add(brand)
-
-    # Normalize: remove "Active Campaign" if "ActiveCampaign" present
-    if "ActiveCampaign" in found and "Active Campaign" in found:
-        found.discard("Active Campaign")
 
     return sorted(found)
 
@@ -633,37 +623,38 @@ def estimate_cost(results: list[dict]) -> float:
 
 
 # ---------------------------------------------------------------------------
-# AC Share of Voice & Scorecard
+# Target Share of Voice & Scorecard
 # ---------------------------------------------------------------------------
 
-def calculate_ac_sov(source_df: pd.DataFrame) -> dict:
+def calculate_target_sov(source_df: pd.DataFrame, target_domain: str) -> dict:
     """
-    LLM Share of Voice for ActiveCampaign.
-    Definition: AC citation appearances / total citation appearances across all runs.
-
-    Requires 'category' column (from ac_categorizer) and 'run_count' column.
-    Returns dict with: ac_citations, total_citations, sov_pct.
+    LLM Share of Voice for the target domain.
+    Counts citations whose URL host matches (or is a subdomain of) target_domain,
+    divided by total citations across all runs.
+    Returns dict with: target_citations, total_citations, sov_pct.
     """
     if source_df.empty or "run_count" not in source_df.columns:
-        return {"ac_citations": 0, "total_citations": 0, "sov_pct": 0.0}
+        return {"target_citations": 0, "total_citations": 0, "sov_pct": 0.0}
 
     total = int(source_df["run_count"].sum())
-    if total == 0:
-        return {"ac_citations": 0, "total_citations": 0, "sov_pct": 0.0}
+    if total == 0 or not target_domain:
+        return {"target_citations": 0, "total_citations": total, "sov_pct": 0.0}
 
-    if "category" in source_df.columns:
-        ac_mask = source_df["category"].str.startswith("AC:", na=False)
-        ac = int(source_df.loc[ac_mask, "run_count"].sum())
+    from target_categorizer import categorize_url
+
+    def _is_target(uri) -> bool:
+        return categorize_url(str(uri), target_domain) == "Target"
+
+    if "uri" in source_df.columns:
+        mask = source_df["uri"].apply(_is_target)
+    elif "domain" in source_df.columns:
+        mask = source_df["domain"].apply(_is_target)
     else:
-        # Fallback: check domain column if categorization hasn't run yet
-        if "domain" in source_df.columns:
-            ac_mask = source_df["domain"].str.contains("activecampaign", case=False, na=False)
-            ac = int(source_df.loc[ac_mask, "run_count"].sum())
-        else:
-            ac = 0
+        mask = pd.Series([False] * len(source_df))
 
-    sov_pct = round(ac / total * 100, 1) if total > 0 else 0.0
-    return {"ac_citations": ac, "total_citations": total, "sov_pct": sov_pct}
+    target_citations = int(source_df.loc[mask, "run_count"].sum())
+    sov_pct = round(target_citations / total * 100, 1) if total > 0 else 0.0
+    return {"target_citations": target_citations, "total_citations": total, "sov_pct": sov_pct}
 
 
 def build_scorecard(
@@ -671,6 +662,7 @@ def build_scorecard(
     query: str,
     estimated_cost: float,
     sov: Optional[dict] = None,
+    target_domain: str = "",
 ) -> pd.DataFrame:
     """
     Builds a 2-column scorecard DataFrame: metric | value.
@@ -682,18 +674,19 @@ def build_scorecard(
     ent_df   = result.get("entities", pd.DataFrame())
 
     if sov is None:
-        sov = calculate_ac_sov(src_df)
+        sov = calculate_target_sov(src_df, target_domain)
 
     rows = [
         ("Query",               query),
+        ("Target Domain",       target_domain or "—"),
         ("Queries Processed",   1),
         ("Total Responses",     len(raw_runs)),
         ("Clusters Found",      len(sub_df) if not sub_df.empty else 0),
         ("Sources Found Total", len(src_df) if not src_df.empty else 0),
         ("Entities Found",      len(ent_df) if not ent_df.empty else 0),
         ("Estimated Cost",      f"${estimated_cost:.4f}"),
-        ("AC SoV (Citation %)", f"{sov['sov_pct']:.1f}%"),
-        ("AC Citations",        sov["ac_citations"]),
+        ("Target SoV (Citation %)", f"{sov['sov_pct']:.1f}%"),
+        ("Target Citations",    sov["target_citations"]),
         ("Total Citations",     sov["total_citations"]),
     ]
     return pd.DataFrame(rows, columns=["metric", "value"])
@@ -708,10 +701,12 @@ def save_to_csv(
     query: str = "",
     output_dir: str = ".",
     prefix: str = "",
+    target_domain: str = "",
 ) -> dict[str, str]:
     """
     Writes 4 CSVs: top_subqueries, top_sources (sorted by citation count), top_entities, scorecard.
     prefix: optional string prepended to filenames (e.g. "q1_") for multi-query runs.
+    target_domain: used to compute Target SoV for the scorecard.
     Returns {name: filepath}.
     """
     os.makedirs(output_dir, exist_ok=True)
@@ -737,8 +732,8 @@ def save_to_csv(
             logger.info(f"Saved {path}")
 
     # Scorecard CSV
-    sov = calculate_ac_sov(src_df)
-    scorecard_df = build_scorecard(result, query, cost, sov)
+    sov = calculate_target_sov(src_df, target_domain)
+    scorecard_df = build_scorecard(result, query, cost, sov, target_domain=target_domain)
     scorecard_path = os.path.join(output_dir, f"{prefix}scorecard.csv")
     scorecard_df.to_csv(scorecard_path, index=False)
     paths["scorecard"] = scorecard_path
@@ -748,16 +743,16 @@ def save_to_csv(
 
 
 # ---------------------------------------------------------------------------
-# Milestone 2 — Multi-query demo
-# Run: GEMINI_API_KEY=xxx python3 fanout_engine.py
-# Runs 4 AC money queries × 8 runs each, writes CSVs to ./output/, prints scorecard
+# Multi-query demo
+# Run: GEMINI_API_KEY=xxx TARGET_DOMAIN=example.com python3 fanout_engine.py
+# Runs the queries below × 8 runs each, writes CSVs to ./output/, prints scorecard.
 # ---------------------------------------------------------------------------
 
 M2_QUERIES = [
     "best email marketing automation software",
-    "ActiveCampaign vs Klaviyo",
-    "email automation for ecommerce",
     "marketing automation for small business",
+    "email automation for ecommerce",
+    "how to improve email open rates",
 ]
 
 NUM_RUNS = 8  # runs per query
@@ -825,15 +820,17 @@ if __name__ == "__main__":
         print("\n--- Single run complete (Milestone 1 mode). ---\n")
         raise SystemExit(0)
 
-    # ---- Milestone 2 mode (4 queries × 8 runs each) ----
-    from ac_categorizer import categorize_sources
+    # ---- Multi-query mode (4 queries × 8 runs each) ----
+    from target_categorizer import categorize_sources
 
+    target_domain = os.environ.get("TARGET_DOMAIN", "")
     output_dir = "./output"
     os.makedirs(output_dir, exist_ok=True)
 
     print(f"\n{'=' * 60}")
-    print(f"MILESTONE 2 — Query Fan-Out Analysis")
+    print(f"Query Fan-Out Analysis")
     print(f"Queries: {len(M2_QUERIES)}  |  Runs per query: {NUM_RUNS}")
+    print(f"Target domain: {target_domain or '(none — SoV will be 0)'}")
     print(f"Model: {MODEL_NAME}  |  Output: {output_dir}/")
     print(f"{'=' * 60}\n")
 
@@ -849,19 +846,19 @@ if __name__ == "__main__":
             num_runs=NUM_RUNS,
         )
 
-        # Enrich sources with AC categories
+        # Enrich sources with Target/Other categories
         if not result["sources"].empty:
             src_dicts = result["sources"].to_dict("records")
-            enriched  = categorize_sources(src_dicts)
+            enriched  = categorize_sources(src_dicts, target_domain)
             result["sources"] = pd.DataFrame(enriched)
 
         # Calculate cost and SoV
         raw_runs = result.get("raw_runs", [])
         cost = estimate_cost(raw_runs)
-        sov  = calculate_ac_sov(result["sources"])
+        sov  = calculate_target_sov(result["sources"], target_domain)
 
         # Print scorecard to terminal
-        scorecard_df = build_scorecard(result, query, cost, sov)
+        scorecard_df = build_scorecard(result, query, cost, sov, target_domain=target_domain)
         _print_scorecard(scorecard_df, query)
 
         # Print top sources
@@ -877,7 +874,7 @@ if __name__ == "__main__":
 
         # Write CSVs
         prefix = f"q{q_idx}_"
-        paths  = save_to_csv(result, query=query, output_dir=output_dir, prefix=prefix)
+        paths  = save_to_csv(result, query=query, output_dir=output_dir, prefix=prefix, target_domain=target_domain)
         print(f"\n  CSVs written:")
         for name, path in paths.items():
             print(f"    {path}")
@@ -889,24 +886,25 @@ if __name__ == "__main__":
     print("COMBINED SUMMARY — All Queries")
     print(f"{'=' * 60}")
 
-    total_runs   = sum(int(sc.loc[sc["metric"] == "Total Responses",   "value"].iloc[0]) for sc in all_scorecards)
-    total_src    = sum(int(sc.loc[sc["metric"] == "Sources Found Total","value"].iloc[0]) for sc in all_scorecards)
-    total_clust  = sum(int(sc.loc[sc["metric"] == "Clusters Found",     "value"].iloc[0]) for sc in all_scorecards)
-    total_ent    = sum(int(sc.loc[sc["metric"] == "Entities Found",     "value"].iloc[0]) for sc in all_scorecards)
-    total_ac_cit = sum(int(sc.loc[sc["metric"] == "AC Citations",       "value"].iloc[0]) for sc in all_scorecards)
-    total_cit    = sum(int(sc.loc[sc["metric"] == "Total Citations",    "value"].iloc[0]) for sc in all_scorecards)
-    total_cost   = sum(float(sc.loc[sc["metric"] == "Estimated Cost",   "value"].iloc[0].replace("$","")) for sc in all_scorecards)
+    total_runs       = sum(int(sc.loc[sc["metric"] == "Total Responses",      "value"].iloc[0]) for sc in all_scorecards)
+    total_src        = sum(int(sc.loc[sc["metric"] == "Sources Found Total",  "value"].iloc[0]) for sc in all_scorecards)
+    total_clust      = sum(int(sc.loc[sc["metric"] == "Clusters Found",       "value"].iloc[0]) for sc in all_scorecards)
+    total_ent        = sum(int(sc.loc[sc["metric"] == "Entities Found",       "value"].iloc[0]) for sc in all_scorecards)
+    total_target_cit = sum(int(sc.loc[sc["metric"] == "Target Citations",     "value"].iloc[0]) for sc in all_scorecards)
+    total_cit        = sum(int(sc.loc[sc["metric"] == "Total Citations",      "value"].iloc[0]) for sc in all_scorecards)
+    total_cost       = sum(float(sc.loc[sc["metric"] == "Estimated Cost",     "value"].iloc[0].replace("$","")) for sc in all_scorecards)
 
-    overall_sov  = round(total_ac_cit / total_cit * 100, 1) if total_cit > 0 else 0.0
+    overall_sov  = round(total_target_cit / total_cit * 100, 1) if total_cit > 0 else 0.0
 
-    print(f"  Queries Analyzed     : {len(M2_QUERIES)}")
-    print(f"  Total API Runs       : {total_runs}")
-    print(f"  Total Clusters       : {total_clust}")
-    print(f"  Total Unique Sources : {total_src}")
-    print(f"  Total Entities       : {total_ent}")
-    print(f"  Total AC Citations   : {total_ac_cit} of {total_cit}")
-    print(f"  AC LLM Share of Voice: {overall_sov:.1f}%")
-    print(f"  Total Estimated Cost : ${total_cost:.4f}")
+    print(f"  Queries Analyzed          : {len(M2_QUERIES)}")
+    print(f"  Target Domain             : {target_domain or '(none)'}")
+    print(f"  Total API Runs            : {total_runs}")
+    print(f"  Total Clusters            : {total_clust}")
+    print(f"  Total Unique Sources      : {total_src}")
+    print(f"  Total Entities            : {total_ent}")
+    print(f"  Total Target Citations    : {total_target_cit} of {total_cit}")
+    print(f"  Target LLM Share of Voice : {overall_sov:.1f}%")
+    print(f"  Total Estimated Cost      : ${total_cost:.4f}")
     print(f"\n  CSVs saved to: {output_dir}/")
     print(f"{'=' * 60}")
-    print("\n--- Milestone 2 complete. ---\n")
+    print("\n--- Run complete. ---\n")

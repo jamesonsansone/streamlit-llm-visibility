@@ -4,11 +4,19 @@ db.py — Supabase persistence layer for Query Fan-Out Analysis.
 Wraps supabase-py with the four operations report.py needs:
   - get_client()          → supabase Client or None
   - save_run_to_db()      → persist a completed run_analysis() result
-  - load_all_queries()    → list of {db_id, prefix, query_text, ...} for sidebar/overview
+  - load_all_queries()    → list of {db_id, query_text, target_domain, ...} for sidebar/overview
   - load_query_detail()   → {scorecard, sources_df, subqueries_df, entities_df, responses_df}
 
 Graceful degradation: every function returns None / empty structures if
 SUPABASE_URL or SUPABASE_KEY are not set. report.py falls back to CSVs.
+
+Schema note (v1 open-source refactor): the `queries` table has been renamed from
+ac_sov_pct / ac_citations to target_sov_pct / target_citations, and a
+target_domain column was added. Existing Supabase users should run:
+
+    ALTER TABLE queries RENAME COLUMN ac_sov_pct   TO target_sov_pct;
+    ALTER TABLE queries RENAME COLUMN ac_citations TO target_citations;
+    ALTER TABLE queries ADD COLUMN target_domain text;
 """
 
 import logging
@@ -56,6 +64,7 @@ def save_run_to_db(
     query: str,
     model_used: str,
     num_runs: int,
+    target_domain: str = "",
 ) -> Optional[int]:
     """
     Persists a complete run_analysis() result to Supabase.
@@ -66,29 +75,28 @@ def save_run_to_db(
         return None
 
     try:
-        from fanout_engine import estimate_cost, calculate_ac_sov
+        from fanout_engine import estimate_cost, calculate_target_sov
         raw_runs = result.get("raw_runs", [])
         cost = estimate_cost(raw_runs)
         src_df = result.get("sources", pd.DataFrame())
-        sov = calculate_ac_sov(src_df)
+        sov = calculate_target_sov(src_df, target_domain)
 
-        # 1. Insert into queries
         q_resp = (
             client.table("queries")
             .insert({
-                "query_text": query,
-                "model_used": model_used,
-                "num_runs":   num_runs,
-                "total_cost": float(cost),
-                "ac_sov_pct": float(sov.get("sov_pct", 0)),
-                "ac_citations": int(sov.get("ac_citations", 0)),
-                "total_citations": int(sov.get("total_citations", 0)),
+                "query_text":       query,
+                "target_domain":    target_domain or None,
+                "model_used":       model_used,
+                "num_runs":         num_runs,
+                "total_cost":       float(cost),
+                "target_sov_pct":   float(sov.get("sov_pct", 0)),
+                "target_citations": int(sov.get("target_citations", 0)),
+                "total_citations":  int(sov.get("total_citations", 0)),
             })
             .execute()
         )
         query_id = q_resp.data[0]["id"]
 
-        # 2. Insert runs (response_text per run)
         runs_rows = [
             {
                 "query_id":      query_id,
@@ -102,7 +110,6 @@ def save_run_to_db(
         if runs_rows:
             client.table("runs").insert(runs_rows).execute()
 
-        # 3. Insert sources
         if not src_df.empty:
             sources_rows = []
             for _, row in src_df.iterrows():
@@ -120,7 +127,6 @@ def save_run_to_db(
                 })
             client.table("sources").insert(sources_rows).execute()
 
-        # 4. Insert subqueries
         sub_df = result.get("subqueries", pd.DataFrame())
         if not sub_df.empty:
             sub_rows = []
@@ -137,7 +143,6 @@ def save_run_to_db(
                 })
             client.table("subqueries").insert(sub_rows).execute()
 
-        # 5. Insert entities
         ent_df = result.get("entities", pd.DataFrame())
         if not ent_df.empty:
             ent_rows = []
@@ -167,8 +172,8 @@ def save_run_to_db(
 def load_all_queries() -> list[dict]:
     """
     Returns all queries from Supabase ordered by created_at desc.
-    Each dict has keys: db_id, query_text, model_used, num_runs, total_cost,
-    ac_sov_pct, ac_citations, total_citations, created_at.
+    Each dict has keys: db_id, query_text, target_domain, model_used, num_runs,
+    total_cost, target_sov_pct, target_citations, total_citations, created_at.
     Returns [] if no client or on error.
     """
     client = get_client()
@@ -177,21 +182,25 @@ def load_all_queries() -> list[dict]:
     try:
         resp = (
             client.table("queries")
-            .select("id, query_text, model_used, num_runs, total_cost, ac_sov_pct, ac_citations, total_citations, created_at")
+            .select(
+                "id, query_text, target_domain, model_used, num_runs, total_cost, "
+                "target_sov_pct, target_citations, total_citations, created_at"
+            )
             .order("created_at", desc=True)
             .execute()
         )
         return [
             {
-                "db_id":           row["id"],
-                "query_text":      row["query_text"],
-                "model_used":      row.get("model_used", ""),
-                "num_runs":        row.get("num_runs", 0),
-                "total_cost":      row.get("total_cost", 0),
-                "ac_sov_pct":      row.get("ac_sov_pct", 0),
-                "ac_citations":    row.get("ac_citations", 0),
-                "total_citations": row.get("total_citations", 0),
-                "created_at":      row.get("created_at", ""),
+                "db_id":            row["id"],
+                "query_text":       row["query_text"],
+                "target_domain":    row.get("target_domain", "") or "",
+                "model_used":       row.get("model_used", ""),
+                "num_runs":         row.get("num_runs", 0),
+                "total_cost":       row.get("total_cost", 0),
+                "target_sov_pct":   row.get("target_sov_pct", 0),
+                "target_citations": row.get("target_citations", 0),
+                "total_citations":  row.get("total_citations", 0),
+                "created_at":       row.get("created_at", ""),
             }
             for row in (resp.data or [])
         ]
@@ -218,46 +227,40 @@ def load_query_detail(db_id: int) -> dict:
         return empty
 
     try:
-        # Query metadata
         q_resp = client.table("queries").select("*").eq("id", db_id).execute()
         if not q_resp.data:
             return empty
         q = q_resp.data[0]
 
-        # Build scorecard DataFrame matching the existing format
         scorecard_rows = [
-            ("Query",               q["query_text"]),
-            ("Queries Processed",   1),
-            ("Total Responses",     q.get("num_runs", 0)),
-            ("Clusters Found",      0),   # updated below
-            ("Sources Found Total", 0),   # updated below
-            ("Entities Found",      0),   # updated below
-            ("Estimated Cost",      f"${float(q.get('total_cost', 0)):.4f}"),
-            ("AC SoV (Citation %)", f"{float(q.get('ac_sov_pct', 0)):.1f}%"),
-            ("AC Citations",        int(q.get("ac_citations", 0))),
-            ("Total Citations",     int(q.get("total_citations", 0))),
+            ("Query",                    q["query_text"]),
+            ("Target Domain",            q.get("target_domain", "") or "—"),
+            ("Queries Processed",        1),
+            ("Total Responses",          q.get("num_runs", 0)),
+            ("Clusters Found",           0),
+            ("Sources Found Total",      0),
+            ("Entities Found",           0),
+            ("Estimated Cost",           f"${float(q.get('total_cost', 0)):.4f}"),
+            ("Target SoV (Citation %)",  f"{float(q.get('target_sov_pct', 0)):.1f}%"),
+            ("Target Citations",         int(q.get("target_citations", 0))),
+            ("Total Citations",          int(q.get("total_citations", 0))),
         ]
 
-        # Sources
         src_resp = client.table("sources").select("*").eq("query_id", db_id).execute()
         src_df = pd.DataFrame(src_resp.data or []).drop(columns=["id", "query_id", "created_at"], errors="ignore")
 
-        # Subqueries
         sub_resp = client.table("subqueries").select("*").eq("query_id", db_id).execute()
         sub_df = pd.DataFrame(sub_resp.data or []).drop(columns=["id", "query_id", "created_at"], errors="ignore")
 
-        # Entities
         ent_resp = client.table("entities").select("*").eq("query_id", db_id).execute()
         ent_df = pd.DataFrame(ent_resp.data or []).drop(columns=["id", "query_id", "created_at"], errors="ignore")
 
-        # Runs (for Citation Mapper — response_text)
         run_resp = client.table("runs").select("run_index, response_text").eq("query_id", db_id).execute()
         responses_df = pd.DataFrame(run_resp.data or [])
 
-        # Patch scorecard counts now that we have the DFs
-        scorecard_rows[3] = ("Clusters Found",      len(sub_df))
-        scorecard_rows[4] = ("Sources Found Total",  len(src_df))
-        scorecard_rows[5] = ("Entities Found",       len(ent_df))
+        scorecard_rows[4] = ("Clusters Found",       len(sub_df))
+        scorecard_rows[5] = ("Sources Found Total",  len(src_df))
+        scorecard_rows[6] = ("Entities Found",       len(ent_df))
         scorecard_df = pd.DataFrame(scorecard_rows, columns=["metric", "value"])
 
         return {
